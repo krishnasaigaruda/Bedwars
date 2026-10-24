@@ -3,3 +3,6 @@ tools/**/node_modules/
 
 # macOS
 .DS_Store
+
+# Copy of the site for Cloudflare Pages (index.html, style.css, src/)
+deploy/
