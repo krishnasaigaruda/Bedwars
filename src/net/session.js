@@ -8,9 +8,19 @@ import { CENTER, LOBBY_Y, MODES, TEAMS } from '../config.js';
 import { getItem } from '../game/items.js';
 import { Game } from '../game/sim.js';
 import { Bot, botName } from '../game/bots.js';
+import { Body } from '../player/physics.js';
 
 // Events that only matter to the player they're about.
 const PRIVATE = new Set(['pickup', 'ate', 'bought', 'kb', 'tp', 'reward', 'deny']);
+
+// Only short text values for the known Wardrobe fields get passed on.
+const LOOK_KEYS = ['skin', 'hairStyle', 'hair', 'eyes', 'shirt', 'pants', 'shoes', 'cap'];
+function cleanLook(look) {
+  if (!look || typeof look !== 'object') return null;
+  const out = {};
+  for (const k of LOOK_KEYS) if (typeof look[k] === 'string' && look[k].length <= 16) out[k] = look[k];
+  return Object.keys(out).length ? out : null;
+}
 
 const countItems = (stacks) => {
   const m = new Map();
@@ -21,7 +31,7 @@ const sameCounts = (a, b) => a.size === b.size && [...a].every(([k, v]) => b.get
 
 export class HostSession {
   // kind: 'offline' (practice) | 'private' | 'public'
-  constructor({ peer = null, kind, mode, mapId, name, code = null, bots = false }) {
+  constructor({ peer = null, kind, mode, mapId, name, code = null, bots = false, look = null }) {
     this.isHost = true;
     this.kind = kind;
     this.withBots = bots;
@@ -35,7 +45,7 @@ export class HostSession {
     this.lobby = {
       state: 'waiting', countdown: 0, mode: this.mode.id, mapId, code, kind,
       min: kind === 'public' ? this.mode.size * 2 : 1,
-      players: [{ id: this.myId, name, team: -1, host: true }],
+      players: [{ id: this.myId, name, team: -1, host: true, look: cleanLook(look) }],
     };
     this.lastMe = new Map();
     this.lobbyPos = new Map();
@@ -82,7 +92,7 @@ export class HostSession {
     if (this.lobby.players.length >= this.maxPlayers) { link.send({ t: 'reject', reason: 'That room is full.' }); link.close(); return; }
     const name = String(m.name || 'Player').replace(/[^\w\- ]/g, '').slice(0, 16) || 'Player';
     this.links.set(link.id, link);
-    this.lobby.players.push({ id: link.id, name, team: -1 });
+    this.lobby.players.push({ id: link.id, name, team: -1, look: cleanLook(m.look) });
     link.send({ t: 'welcome', id: link.id, lobby: this.lobby });
     this.systemChat(`${name} joined the game (${this.lobby.players.length}/${this.maxPlayers})`);
     this.lobbyChanged();
@@ -173,6 +183,7 @@ export class HostSession {
     const game = new Game({ world, map });
     for (const p of this.lobby.players) {
       const gp = game.addPlayer({ id: p.id, name: p.name, team: p.team });
+      gp.look = p.look ?? null;
       const s = map.bases[p.team].spawn;
       gp.pos = { x: s.x, y: s.y, z: s.z };
     }
@@ -189,23 +200,43 @@ export class HostSession {
 
   // ------------------------------------------------------------ per tick
 
-  // Bots stroll around the lobby plaza while everyone waits.
+  // Main hands us the world so lobby bots can walk with real collisions.
+  setWorld(world) { this.world = world; this.wander.clear(); }
+
+  // Bots stroll around the lobby plaza while everyone waits, using the same
+  // physics as players: they bump into things, hop up steps, never clip.
   wanderBots() {
-    const cx = CENTER.x + 0.5, cz = CENTER.z + 0.5, y = LOBBY_Y + 1;
+    if (!this.world) return;
+    const cx = CENTER.x + 0.5, cz = CENTER.z + 0.5;
+    const spot = () => { const a = Math.random() * Math.PI * 2, r = 4.5 + Math.random() * 4.5; return [cx + Math.cos(a) * r, cz + Math.sin(a) * r]; };
     for (const p of this.lobby.players) {
       if (!p.bot) continue;
       let w = this.wander.get(p.id);
-      const spot = () => { const a = Math.random() * Math.PI * 2, r = 5 + Math.random() * 4; return [cx + Math.cos(a) * r, cz + Math.sin(a) * r]; };
-      if (!w) { const [x, z] = spot(); w = { x, z, tx: x, tz: z, wait: Math.floor(Math.random() * 60), yaw: 0 }; this.wander.set(p.id, w); }
-      const dx = w.tx - w.x, dz = w.tz - w.z, d = Math.hypot(dx, dz);
-      if (d < 0.2) {
-        if (--w.wait <= 0) { [w.tx, w.tz] = spot(); w.wait = 40 + Math.floor(Math.random() * 120); }
-      } else {
-        const step = Math.min(d, 0.2);
-        w.x += (dx / d) * step; w.z += (dz / d) * step;
-        w.yaw = Math.atan2(-dx, -dz);
+      if (!w) {
+        const [x, z] = spot();
+        const body = new Body();
+        body.teleport(x, LOBBY_Y + 1.5, z);
+        [w] = [{ body, tx: x, tz: z, wait: Math.floor(Math.random() * 60), yaw: Math.random() * 6.28, stuck: 0, jump: false }];
+        this.wander.set(p.id, w);
       }
-      this.lobbyPos.set(p.id, { p: [w.x, y, w.z], yaw: w.yaw, pitch: 0, fl: 0 });
+      const b = w.body;
+      const dx = w.tx - b.pos.x, dz = w.tz - b.pos.z, d = Math.hypot(dx, dz);
+      const mv = { forward: 0, strafe: 0, jump: w.jump, sneak: false, sprint: false, yaw: w.yaw, canSprint: true };
+      w.jump = false;
+      if (d < 0.5) {
+        if (--w.wait <= 0) { [w.tx, w.tz] = spot(); w.wait = 40 + Math.floor(Math.random() * 120); w.stuck = 0; }
+      } else {
+        const want = Math.atan2(-dx, -dz);
+        let turn = Math.atan2(Math.sin(want - w.yaw), Math.cos(want - w.yaw));
+        w.yaw += Math.max(-0.2, Math.min(0.2, turn));
+        mv.yaw = w.yaw;
+        mv.forward = 1;
+        if (b.collidedH && b.onGround) w.jump = true;               // hop up a step
+        if (b.collidedH && ++w.stuck > 30) { [w.tx, w.tz] = spot(); w.stuck = 0; }   // blocked: go elsewhere
+      }
+      b.tick(this.world, mv);
+      if (b.pos.y < LOBBY_Y - 10) { const [x, z] = spot(); b.teleport(x, LOBBY_Y + 1.5, z); }
+      this.lobbyPos.set(p.id, { p: [b.pos.x, b.pos.y, b.pos.z], yaw: w.yaw, pitch: 0, fl: 0 });
     }
   }
 
@@ -252,7 +283,8 @@ export class HostSession {
     const pr = [...g.projectiles.values()].map((q) => [q.id, q.kind, +q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2), +q.vx.toFixed(2), +q.vy.toFixed(2), +q.vz.toFixed(2), q.fuse ?? 0]);
     const gens = g.gens.filter((x) => x.kind === 'gold' || x.kind === 'diamond').map((x) => [x.tier, x.timer]);
     const beds = [...g.beds].filter(([, v]) => v).map(([k]) => k);
-    return { t: 'snap', time: g.time, pl, dr, pr, gens, beds };
+    const sc = [...g.players.values()].map((p) => [p.id, p.kills, p.finals, p.bedsBroken]);
+    return { t: 'snap', time: g.time, pl, dr, pr, gens, beds, sc };
   }
 
   sendSnapshots() {
@@ -396,8 +428,9 @@ export class HostSession {
 }
 
 export class ClientSession {
-  constructor({ peer, link, name }) {
+  constructor({ peer, link, name, look = null }) {
     this.isHost = false;
+    this.look = look;
     this.kind = 'client';
     this.peer = peer;
     this.link = link;
@@ -423,7 +456,7 @@ export class ClientSession {
         if (m.t === 'welcome') { clearTimeout(t); this.myId = m.id; this.onMessage = prev; resolve(m.lobby); }
         else if (m.t === 'reject') { clearTimeout(t); this.onMessage = prev; reject(new Error(m.reason)); }
       };
-      this.link.send({ t: 'hello', name: this.name });
+      this.link.send({ t: 'hello', name: this.name, look: this.look });
     });
   }
 

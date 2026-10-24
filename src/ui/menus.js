@@ -1,5 +1,7 @@
 // Main menu: name, mode, map, play buttons and settings. The map orbits behind it.
+import * as THREE from 'three';
 import { MODES, TEAMS } from '../config.js';
+import { LOOK_OPTIONS, PlayerModel, resolveLook } from '../render/models.js';
 import { play } from '../audio.js';
 import { MAPS } from '../world/mapgen.js';
 import { iconURL } from './hud.js';
@@ -62,7 +64,10 @@ export class Menu {
         <div class="tagline">Protect your bed. Break theirs.</div>
         <div class="panel menu-card">
           <label class="field-label" for="name">Your name</label>
-          <input id="name" class="input" maxlength="16" value="${s.name.replace(/"/g, '')}" spellcheck="false" autocomplete="off">
+          <div class="name-row">
+            <input id="name" class="input" maxlength="16" value="${s.name.replace(/"/g, '')}" spellcheck="false" autocomplete="off">
+            <button class="btn btn-wood" data-act="wardrobe">Wardrobe</button>
+          </div>
           <div class="field-label">Mode</div>
           <div class="modes">${modes}</div>
           <div class="field-label">Map</div>
@@ -117,6 +122,7 @@ export class Menu {
       if (act === 'settings') return this.openSettings();
       if (act === 'controls') return this.openControls();
       if (act === 'howto') return this.openHowTo();
+      if (act === 'wardrobe') return this.openWardrobe();
       if (act === 'join') return this.handlers.onJoin?.($('#code').value);
       if (act === 'practiceBots') return this.handlers.onPractice?.(true);
       if (act === 'practice') return this.handlers.onPractice?.(false);
@@ -180,6 +186,78 @@ export class Menu {
       });
       check('bob', 'bobbing');
       check('assist', 'bridgeAssist');
+    });
+  }
+
+  // Customize your character: pick from the same parts the game uses.
+  // Your shirt is always your team's color in a match.
+  openWardrobe() {
+    const s = this.settings;
+    let look = { ...(s.look ?? {}) };
+    const FIELDS = [
+      ['skin', 'Skin'], ['hairStyle', 'Hair style'], ['hair', 'Hair color'], ['eyes', 'Eyes'],
+      ['shirt', 'Top'], ['pants', 'Pants'], ['shoes', 'Shoes'], ['cap', 'Cap color'],
+    ];
+    const NAMES = { short: 'Short', fringe: 'Fringe', side: 'Side part', long: 'Long', cap: 'Cap', spiky: 'Spiky', hoodie: 'Hoodie', tee: 'T-shirt' };
+    const rows = () => {
+      const cur = resolveLook(s.name, look);
+      return FIELDS.map(([key, label]) => `<div class="wr-row"><span class="wr-label">${label}</span><div class="wr-choices">${
+        LOOK_OPTIONS[key].map((v) => v.startsWith('#')
+          ? `<button class="wr-swatch ${cur[key] === v ? 'on' : ''}" data-f="${key}" data-v="${v}" style="background:${v}"></button>`
+          : `<button class="chip ${cur[key] === v ? 'active' : ''}" data-f="${key}" data-v="${v}">${NAMES[v] ?? v}</button>`).join('')
+      }</div></div>`).join('');
+    };
+    this.modal(`<div class="panel-title">Wardrobe</div>
+      <div class="wardrobe"><canvas class="wr-preview" width="220" height="300"></canvas><div class="wr-opts">${rows()}</div></div>
+      <div class="row"><button class="btn btn-wood" data-random>Random</button><button class="btn btn-wood" data-reset>Reset</button></div>`, (m) => {
+      // A little 3D preview that spins while the wardrobe is open.
+      const canvas = m.querySelector('.wr-preview');
+      const gl = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+      gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      gl.setSize(220, 300, false);
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 2.4));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+      sun.position.set(1, 2, -2);
+      scene.add(sun);
+      const cam = new THREE.PerspectiveCamera(32, 220 / 300, 0.1, 50);
+      cam.position.set(0, 1.15, -4.2);
+      cam.lookAt(0, 0.95, 0);
+      let model = null;
+      const rebuild = () => {
+        if (model) scene.remove(model.root);
+        model = new PlayerModel({ team: 0, name: s.name, showName: false, look });
+        model.shadow && (model.shadow.visible = false);
+        scene.add(model.root);
+      };
+      rebuild();
+      let last = performance.now();
+      const spin = (now) => {
+        if (m.classList.contains('hidden') || !m.contains(canvas)) { gl.dispose(); return; }
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        model.root.rotation.y += dt * 0.8;
+        model.animate(dt, { speed: 0 });
+        gl.render(scene, cam);
+        requestAnimationFrame(spin);
+      };
+      requestAnimationFrame(spin);
+
+      const save = () => {
+        s.look = Object.keys(look).length ? look : null;
+        saveSettings(s);
+        m.querySelector('.wr-opts').innerHTML = rows();
+        rebuild();
+      };
+      m.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-f]');
+        if (b) { look = { ...look, [b.dataset.f]: b.dataset.v }; play('click'); save(); return; }
+        if (e.target.closest('[data-random]')) {
+          look = Object.fromEntries(Object.entries(LOOK_OPTIONS).map(([k, opts]) => [k, opts[Math.floor(Math.random() * opts.length)]]));
+          play('pop'); save();
+        }
+        if (e.target.closest('[data-reset]')) { look = {}; play('click'); save(); }
+      });
     });
   }
 

@@ -276,6 +276,22 @@ const SHOES = ['#2d2f3a', '#5a3a22', '#e8e8ee', '#b8323a'];
 const STYLES = ['short', 'fringe', 'side', 'long', 'cap', 'spiky'];
 const CAPS = ['#d83a3a', '#2f2f3a', '#f2f2f2', '#3f7bff', '#3fbf6a'];
 
+// Everything the Wardrobe can change, and the allowed values.
+export const LOOK_OPTIONS = {
+  skin: SKINS, hairStyle: STYLES, hair: HAIRS, eyes: EYES,
+  shirt: ['hoodie', 'tee'], pants: PANTS, shoes: SHOES, cap: CAPS,
+};
+
+// The look generated from a name, with any Wardrobe choices on top
+// (unknown or invalid values are ignored).
+export function resolveLook(name, custom) {
+  const L = looksFor(name || 'player');
+  if (custom && typeof custom === 'object') {
+    for (const [k, opts] of Object.entries(LOOK_OPTIONS)) if (opts.includes(custom[k])) L[k] = custom[k];
+  }
+  return L;
+}
+
 export function looksFor(name) {
   let h = 2166136261;
   for (const c of name) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
@@ -297,9 +313,10 @@ export function looksFor(name) {
 // A player's face (front of the head plus hair layer) as a small image URL,
 // for the HUD's player bar.
 const faceCache = new Map();
-export function faceIcon(name) {
-  if (faceCache.has(name)) return faceCache.get(name);
-  const L = looksFor(name || 'player');
+export function faceIcon(name, look) {
+  const key = `${name}|${look ? JSON.stringify(look) : ''}`;
+  if (faceCache.has(key)) return faceCache.get(key);
+  const L = resolveLook(name, look);
   const cv = document.createElement('canvas');
   cv.width = cv.height = 16;
   const ctx = cv.getContext('2d');
@@ -307,7 +324,7 @@ export function faceIcon(name) {
   paint.head('front', ctx, 16, 16);
   paint.hat('front', ctx, 16, 16);
   const url = cv.toDataURL();
-  faceCache.set(name, url);
+  faceCache.set(key, url);
   return url;
 }
 
@@ -508,9 +525,9 @@ function poseInHand(obj, item) {
 // ------------------------------------------------------------- players
 
 export class PlayerModel {
-  constructor({ team = 0, name = '', showName = true } = {}) {
+  constructor({ team = 0, name = '', showName = true, look = null } = {}) {
     this.team = team;
-    this.look = looksFor(name || 'player');
+    this.look = resolveLook(name, look);
     this.atlas = new SkinAtlas();
     this.paint = playerPainters(this.look, TEAMS[team].hex);
     const h = buildHumanoid(this.atlas, this.paint);
@@ -646,9 +663,9 @@ export class PlayerModel {
 
 // The right arm on its own, for the first-person view. Origin at the top
 // of the shoulder, hanging down -y, front toward -z.
-export function createFirstPersonArm({ team = 0, name = 'player' } = {}) {
+export function createFirstPersonArm({ team = 0, name = 'player', look = null } = {}) {
   const atlas = new SkinAtlas(64, 32);
-  const paint = playerPainters(looksFor(name || 'player'), TEAMS[team].hex);
+  const paint = playerPainters(resolveLook(name, look), TEAMS[team].hex);
   const geo = atlas.box(4, 12, 4, (f, c, W, H) => paint.arm(f, c, W, H, 'R'));
   const g = new THREE.Group();
   const m = new THREE.Mesh(geo, atlas.material());

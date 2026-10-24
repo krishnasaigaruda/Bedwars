@@ -24,12 +24,13 @@ export class RemotePlayers {
       seen.add(p.id);
       const team = p.team >= 0 ? p.team : LOBBY_TEAM;
       let v = this.views.get(p.id);
-      if (!v || v.team !== team || v.name !== p.name) {
+      const lookKey = p.look ? JSON.stringify(p.look) : '';
+      if (!v || v.team !== team || v.name !== p.name || v.lookKey !== lookKey) {
         if (v) this.group.remove(v.model.root);
-        const model = new PlayerModel({ team, name: p.name, showName: true });
+        const model = new PlayerModel({ team, name: p.name, showName: true, look: p.look });
         model.root.position.set(p.pos.x, p.pos.y, p.pos.z);
         this.group.add(model.root);
-        v = { model, team, name: p.name, yaw: p.yaw, swing: p.swing ?? 0, swingT: 0, hurtT: 0, lastPos: { ...p.pos }, speed: 0 };
+        v = { model, team, name: p.name, lookKey, yaw: p.yaw, swing: p.swing ?? 0, swingT: 0, hurtT: 0, lastPos: { ...p.pos }, speed: 0 };
         this.views.set(p.id, v);
       }
       const m = v.model;

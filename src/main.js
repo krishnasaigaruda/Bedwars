@@ -189,9 +189,9 @@ function teleport(p, yaw) {
 
 function setLocalModel(team) {
   if (local.model) renderer.scene.remove(local.model.root);
-  local.model = new PlayerModel({ team, name: settings.name, showName: false });
+  local.model = new PlayerModel({ team, name: settings.name, showName: false, look: settings.look });
   renderer.scene.add(local.model.root);
-  firstPerson.setPlayer(team, settings.name);
+  firstPerson.setPlayer(team, settings.name, settings.look);
 }
 
 // Fresh map, everyone floating in the waiting lobby (first join and every new round).
@@ -218,6 +218,7 @@ function resetToLobby() {
   local.body.canFly = true;
   local.body.flying = false;
   local.cam = 0;
+  if (isHost()) state.session.setWorld(state.world);
 }
 
 let roundTimer = null;
@@ -261,7 +262,7 @@ function beginMatch() {
     // A shadow copy that only mirrors what the host tells us.
     game = new Game({ world: state.world, map: state.map });
     game.shadow = true;
-    for (const p of lobby.players) game.addPlayer({ id: p.id, name: p.name, team: p.team });
+    for (const p of lobby.players) game.addPlayer({ id: p.id, name: p.name, team: p.team }).look = p.look ?? null;
   }
   state.game = game;
   state.me = game.players.get(s.myId);
@@ -381,6 +382,10 @@ function applySnapshot(m) {
     p.heldId = r[7]; p.heldTint = r[8]; p.armorKey = r[9]; p.swing = r[10];
   }
   for (const p of g.players.values()) if (!m.pl.some((r) => r[0] === p.id)) p.connected = false;
+  for (const [id, k, f, b] of m.sc ?? []) {
+    const p = g.players.get(id);
+    if (p && p !== state.me) { p.kills = k; p.finals = f; p.bedsBroken = b; }
+  }
   g.drops = new Map(m.dr.map((r) => [r[0], { id: r[0], item: r[1], count: r[2], x: r[3], y: r[4], z: r[5], tint: r[6] ?? undefined }]));
   g.projectiles = new Map(m.pr.map((r) => [r[0], { id: r[0], kind: r[1], x: r[2], y: r[3], z: r[4], vx: r[5], vy: r[6], vz: r[7], fuse: r[8] }]));
   const gens = g.gens.filter((x) => x.kind === 'gold' || x.kind === 'diamond');
@@ -926,7 +931,9 @@ function handleEvent(e) {
       if (!e.byName) break;
       const t = TEAMS[e.team];
       const by = ` by <span style="color:${TEAMS[e.byTeam].css}">${esc(e.byName)}</span>`;
-      hud.message(`<span style="color:#fff">BED DESTRUCTION &gt;</span> <span style="color:${t.css}">${t.name} Bed</span> was destroyed${by}!`, 8);
+      const bedLine = `<b style="color:#fff">BED DESTRUCTION &gt;</b> <span style="color:${t.css}">${t.name} Bed</span> was destroyed${by}!`;
+      hud.message(bedLine, 8);
+      hud.chat(bedLine);
       if (me && e.team === me.team) hud.showTitle('BED DESTROYED!', 'You will no longer respawn!', 3.5, '#ff4f45');
       else if (me && e.by === me.id) hud.showTitle('BED DESTROYED!', `You broke ${t.name}'s bed!`, 2.5, t.css);
       play('bed');
@@ -962,8 +969,14 @@ function handleEvent(e) {
         closeUI(false);
         if (e.final) hud.showTitle('YOU DIED!', 'Your bed is gone. You are now spectating.', 4, '#ff4f45');
       }
-      if (e.killer && me && e.killer === me.id) play('ding');
+      if (e.killer && me && e.killer === me.id) {
+        play('ding');
+        const victim = `<span style="color:${TEAMS[e.team].css}">${esc(e.name)}</span>`;
+        hud.showAction(e.final ? 'FINAL KILL!' : 'KILL!', 2);
+        hud.message(`${e.final ? '<b style="color:#5ff0ff">FINAL KILL</b> on' : 'You killed'} ${victim}!`, 4);
+      }
       hud.message(deathMessage(e), 6);
+      hud.chat(deathMessage(e));
       break;
     case 'respawn':
       if (mine) {
@@ -1077,7 +1090,7 @@ function remoteList() {
       return {
         id: p.id, name: p.name, team: p.team, pos: p.pos, yaw: p.yaw, pitch: p.pitch, sneak: p.sneak, flying: p.flying,
         held: held?.id ?? null, heldTint: held?.tint, armorKey: p.armorKey ?? p.inv.armor.map((a) => a?.id ?? '').join('|'),
-        swing: p.swing, visible: !(p.invis || p.effects?.invis),
+        swing: p.swing, visible: !(p.invis || p.effects?.invis), look: p.look,
       };
     });
   }
@@ -1090,7 +1103,7 @@ function remoteList() {
 
 function lobbyRow(r) {
   const lp = state.lobby?.players.find((p) => p.id === r[0]);
-  return { id: r[0], name: lp?.name ?? 'Player', team: -1, pos: { x: r[1], y: r[2], z: r[3] }, yaw: r[4], pitch: r[5], sneak: !!(r[6] & 1), flying: !!(r[6] & 4), held: null, armorKey: '', swing: 0 };
+  return { id: r[0], name: lp?.name ?? 'Player', team: -1, pos: { x: r[1], y: r[2], z: r[3] }, yaw: r[4], pitch: r[5], sneak: !!(r[6] & 1), flying: !!(r[6] & 4), held: null, armorKey: '', swing: 0, look: lp?.look };
 }
 
 function updateGame(dt) {
@@ -1270,7 +1283,7 @@ function topbar() {
     const t = TEAMS[base.team];
     const faces = team.map((p) => {
       const cls = !p.connected || p.eliminated ? 'out' : !p.alive ? 'dead' : '';
-      return `<span class="face ${cls}" title="${esc(p.name)}"><img src="${faceIcon(p.name)}"></span>`;
+      return `<span class="face ${cls}" title="${esc(p.name)}"><img src="${faceIcon(p.name, p.look)}"></span>`;
     }).join('');
     groups.push(`<span class="tb-team ${g.beds.get(base.team) ? '' : 'nobed'}" style="--tc:${t.css}">${faces}</span>`);
   }
@@ -1291,7 +1304,7 @@ function tabList() {
       rows += `<div class="tab-team" style="color:${t.css}">${t.name} <span>${bed}</span></div>`;
       for (const p of team) {
         const status = !p.connected ? 'left' : p.eliminated ? 'out' : !p.alive ? 'dead' : '';
-        const stats = p.kills !== undefined && (isHost() || p === state.me) ? `${p.kills} K · ${p.finals} F · ${p.bedsBroken} B` : '';
+        const stats = `${p.kills ?? 0} kills · ${p.finals ?? 0} finals · ${p.bedsBroken ?? 0} beds`;
         rows += `<div class="tab-row ${status}"><b>${esc(p.name)}${p === state.me ? ' (you)' : ''}</b><span>${status || stats}</span></div>`;
       }
     }
@@ -1441,16 +1454,16 @@ async function withNet(fn) {
 
 const menu = new Menu(document.getElementById('menu'), settings, {
   onPractice: (bots) => {
-    const session = new HostSession({ kind: 'offline', mode: settings.mode, mapId: pickMap(), name: settings.name, bots });
+    const session = new HostSession({ kind: 'offline', mode: settings.mode, mapId: pickMap(), name: settings.name, bots, look: settings.look });
     enterGame(session);
   },
   onQuick: () => withNet(async () => {
     const mm = await import('./net/matchmaking.js');
     const r = await mm.quickPlay(settings.mode, (t) => menu.note(t));
     if (r.role === 'host') {
-      enterGame(new HostSession({ peer: r.peer, kind: 'public', mode: settings.mode, mapId: pickMap(), name: settings.name }));
+      enterGame(new HostSession({ peer: r.peer, kind: 'public', mode: settings.mode, mapId: pickMap(), name: settings.name, look: settings.look }));
     } else {
-      const session = new ClientSession({ peer: r.peer, link: r.link, name: settings.name });
+      const session = new ClientSession({ peer: r.peer, link: r.link, name: settings.name, look: settings.look });
       await session.hello();
       enterGame(session);
     }
@@ -1458,14 +1471,14 @@ const menu = new Menu(document.getElementById('menu'), settings, {
   onCreate: () => withNet(async () => {
     const mm = await import('./net/matchmaking.js');
     const { peer, code } = await mm.hostPrivate();
-    enterGame(new HostSession({ peer, kind: 'private', mode: settings.mode, mapId: pickMap(), name: settings.name, code }));
+    enterGame(new HostSession({ peer, kind: 'private', mode: settings.mode, mapId: pickMap(), name: settings.name, code, look: settings.look }));
   }),
   onJoin: (code) => {
     if (!code || code.length < 5) { menu.note('Type the 5-letter room code first.'); return; }
     withNet(async () => {
       const mm = await import('./net/matchmaking.js');
       const { peer, link } = await mm.joinPrivate(code);
-      const session = new ClientSession({ peer, link, name: settings.name });
+      const session = new ClientSession({ peer, link, name: settings.name, look: settings.look });
       await session.hello();
       enterGame(session);
     });

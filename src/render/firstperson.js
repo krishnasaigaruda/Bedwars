@@ -60,11 +60,11 @@ export class FirstPerson {
     this.aim = new THREE.Vector3();
   }
 
-  setPlayer(team, name) {
-    const key = `${team}|${name}`;
+  setPlayer(team, name, look = null) {
+    const key = `${team}|${name}|${look ? JSON.stringify(look) : ''}`;
     if (key === this.armKey) return;
     this.armKey = key;
-    this.arm = createFirstPersonArm({ team, name });
+    this.arm = createFirstPersonArm({ team, name, look });
     this.shownId = undefined;
   }
 

@@ -533,3 +533,18 @@ kbd {
 .howto-dots { display: flex; gap: 5px; }
 .howto-dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(0, 0, 0, 0.35); border: 2px solid var(--ink); }
 .howto-dots i.on { background: var(--gold); }
+
+.name-row { display: flex; gap: 8px; }
+.name-row .input { flex: 1; min-width: 0; }
+.wardrobe { display: flex; gap: 12px; align-items: flex-start; }
+.wr-preview { width: 220px; height: 300px; flex: none; border-radius: 14px; border: 3px solid var(--ink);
+  background: radial-gradient(ellipse 34% 6% at 50% 90%, rgba(60, 35, 15, 0.35) 0 99%, transparent 100%), linear-gradient(#9fd8ff, #d8f1ff); }
+.wr-opts { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; padding-right: 4px; }
+.wr-row { display: flex; flex-direction: column; gap: 4px; }
+.wr-label { font: 400 15px 'Lilita One', Rubik, sans-serif; color: #fff; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+.wr-choices { display: flex; flex-wrap: wrap; gap: 5px; }
+.wr-swatch { width: 26px; height: 26px; border-radius: 8px; border: 3px solid var(--ink); cursor: pointer; box-shadow: 0 2px 0 var(--ink); }
+.wr-swatch.on { outline: 3px solid #fff; outline-offset: 1px; }
+.wr-choices .chip { font-size: 13px; padding: 3px 9px; }
+.modal-card:has(.wardrobe) { width: min(640px, 100%); }
+@media (max-width: 560px) { .wardrobe { flex-direction: column; align-items: center; } }
