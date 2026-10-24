@@ -124,7 +124,8 @@ const methods = {
   towerCells(team, ax, y0, az, fx, fz) {
     const [rx, rz] = [-fz, fx];
     const at = (u, v) => [ax + fx * (u - 1) + rx * v, az + fz * (u - 1) + rz * v];
-    const wall = B.FLUFF + team, trim = B.CLAY + team;
+    // All Fluff, so a tower can't be broken down for better blocks.
+    const wall = B.FLUFF + team, trim = wall;
     const ladder = B.LADDER + (fx === 1 ? 1 : fx === -1 ? 0 : fz === 1 ? 3 : 2);
     const cells = [];
     const H = 7;
@@ -150,20 +151,21 @@ const methods = {
     return cells;
   },
 
-  // A straight 3-wide bridge, 24 long, starting at (x, y, z): Fluff deck with a
-  // Clay Tile stripe, railings on both sides and lantern posts every 4 blocks.
+  // A straight 3-wide bridge, 24 long, starting at (x, y, z), with railings
+  // and taller posts every 4 blocks. All team Fluff, so it can't be broken
+  // down for better blocks.
   bridgeCells(team, sx, sy, sz, fx, fz, L = 24) {
     const [rx, rz] = [-fz, fx];
-    const deck = B.FLUFF + team, trim = B.CLAY + team;
+    const fluff = B.FLUFF + team;
     const cells = [];
     for (let u = 0; u < L; u++) {
       const at = (v) => [sx + fx * u + rx * v, sz + fz * u + rz * v];
-      for (const v of [0, -1, 1]) { const [x, z] = at(v); cells.push([x, sy, z, v === 0 ? trim : deck]); }
+      for (const v of [0, -1, 1]) { const [x, z] = at(v); cells.push([x, sy, z, fluff]); }
       for (const v of [-2, 2]) {
         const [x, z] = at(v);
-        cells.push([x, sy, z, trim]);
-        cells.push([x, sy + 1, z, trim]);
-        if (u % 4 === 3) { cells.push([x, sy + 2, z, trim]); cells.push([x, sy + 3, z, B.LANTERN]); }
+        cells.push([x, sy, z, fluff]);
+        cells.push([x, sy + 1, z, fluff]);
+        if (u % 4 === 3) cells.push([x, sy + 2, z, fluff]);
       }
     }
     return cells;

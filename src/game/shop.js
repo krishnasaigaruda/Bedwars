@@ -40,8 +40,8 @@ const OFFERS = {
   fireball: { give: { item: 'fireball' }, cost: { silver: 40 }, desc: 'Explodes on impact: breaks blocks and launches players.' },
   tnt: { give: { block: B.TNT, count: 1 }, cost: { gold: 4 }, desc: 'Lights itself when placed. Blows up most blocks.' },
   ender_pearl: { give: { item: 'ender_pearl' }, cost: { diamond: 4 }, desc: 'Teleports you where it lands.' },
-  bridge_egg: { give: { item: 'bridge_egg' }, cost: { diamond: 1 }, desc: 'Place it at an edge: a 24-block bridge with railings builds itself.' },
-  popup_tower: { give: { item: 'popup_tower' }, cost: { silver: 24 }, desc: 'Place it on the ground: a 4x4 tower with a ladder builds itself.' },
+  bridge_egg: { give: { item: 'bridge_egg' }, cost: { diamond: 2 }, desc: 'Place it at an edge: a 24-block Fluff bridge with railings builds itself.' },
+  popup_tower: { give: { item: 'popup_tower' }, cost: { silver: 24 }, desc: 'Place it on the ground: a 4x4 Fluff tower with a ladder builds itself.' },
   magic_milk: { give: { item: 'magic_milk' }, cost: { gold: 3 }, desc: 'Enemy traps ignore you for 30 seconds.' },
 
   speed_potion: { give: { item: 'speed_potion' }, cost: { diamond: 1 }, desc: 'Speed II for 45 seconds.' },

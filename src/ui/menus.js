@@ -7,7 +7,7 @@ import { iconURL } from './hud.js';
 const SETTINGS_KEY = 'blockwars-settings';
 const DEFAULTS = {
   name: '', mode: 'solo', map: 'random',
-  sensitivity: 1, fov: 70, volume: 0.6, bobbing: true, bridgeAssist: true,
+  sensitivity: 1, fov: 70, volume: 0.6, music: 0.5, bobbing: true, bridgeAssist: true,
 };
 
 export function loadSettings() {
@@ -157,8 +157,10 @@ export class Menu {
         <input type="range" id="sens" min="0.2" max="3" step="0.05" value="${s.sensitivity}"></label>
       <label class="slider">Field of view <b id="v-fov">${s.fov}</b>
         <input type="range" id="fov" min="50" max="110" step="1" value="${s.fov}"></label>
-      <label class="slider">Volume <b id="v-vol">${Math.round(s.volume * 100)}%</b>
+      <label class="slider">Sound effects <b id="v-vol">${Math.round(s.volume * 100)}%</b>
         <input type="range" id="vol" min="0" max="1" step="0.05" value="${s.volume}"></label>
+      <label class="slider">Music <b id="v-music">${Math.round(s.music * 100)}%</b>
+        <input type="range" id="music" min="0" max="1" step="0.05" value="${s.music}"></label>
       ${toggle('bob', 'View bobbing', s.bobbing)}
       ${toggle('assist', 'Bridge assist (outline + place at the edge when aiming past it)', s.bridgeAssist)}`, (m) => {
       const bind = (id, key, fmt) => m.querySelector(`#${id}`).addEventListener('input', (e) => {
@@ -170,6 +172,7 @@ export class Menu {
       bind('sens', 'sensitivity', (v) => v.toFixed(2));
       bind('fov', 'fov', (v) => v);
       bind('vol', 'volume', (v) => `${Math.round(v * 100)}%`);
+      bind('music', 'music', (v) => `${Math.round(v * 100)}%`);
       const check = (id, key) => m.querySelector(`#${id}`).addEventListener('change', (e) => {
         s[key] = e.target.checked;
         saveSettings(s);

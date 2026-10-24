@@ -4,7 +4,7 @@
 // the host runs the real Game, clients mirror it into a "shadow" Game.
 import * as THREE from 'three';
 import { CENTER, LOBBY_Y, MODES, PHYS, TEAMS } from './config.js';
-import { play, setVolume, unlockAudio } from './audio.js';
+import { play, setMusic, setMusicVolume, setVolume, unlockAudio } from './audio.js';
 import { Inventory } from './game/inventory.js';
 import { getItem } from './game/items.js';
 import { BREAK_DELAY, EAT_TICKS, REACH_BLOCK, REACH_ENTITY, SWING_TICKS, TPS, breakTicks, fallDamage } from './game/rules.js';
@@ -37,6 +37,7 @@ const input = new Input(canvas);
 const hud = new HUD(document.getElementById('hud'));
 const settings = loadSettings();
 setVolume(settings.volume);
+setMusicVolume(settings.music ?? 0.5);
 
 const particles = new Particles(renderer.scene, null);
 const cursor = new BlockCursor(renderer.scene);
@@ -1386,6 +1387,8 @@ function frame(now) {
   const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   state.t += dt;
+  // Chill track on the menu and in the lobby, the upbeat one while playing.
+  setMusic(state.screen === 'game' && state.phase === 'playing' ? 'game' : 'menu');
   if (state.screen === 'menu') updateMenuCamera(dt);
   else updateGame(dt);
   for (const o of state.animated) o.userData.update(state.t);
@@ -1471,7 +1474,7 @@ const menu = new Menu(document.getElementById('menu'), settings, {
     const mode = MODES[settings.mode] ?? MODES.solo;
     loadMap(settings.map === 'random' ? (state.map?.id ?? MAPS[0].id) : settings.map, mode.teams);
   },
-  onSettings: (s) => setVolume(s.volume),
+  onSettings: (s) => { setVolume(s.volume); setMusicVolume(s.music); },
 });
 
 canvas.addEventListener('click', () => {
