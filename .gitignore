@@ -1,0 +1,5 @@
+# Build tool downloads (recreated with `npm install` in tools/oneclick)
+tools/**/node_modules/
+
+# macOS
+.DS_Store

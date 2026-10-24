@@ -1,0 +1,11 @@
+{
+  "name": "blockwars-oneclick",
+  "private": true,
+  "description": "Builds 1 click/bedwars.html: the whole game in one file that runs by double-clicking.",
+  "scripts": { "build": "node build.mjs" },
+  "devDependencies": {
+    "esbuild": "0.20.2",
+    "three": "0.160.0",
+    "peerjs": "1.5.4"
+  }
+}
