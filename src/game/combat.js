@@ -25,12 +25,13 @@ const methods = {
   attack(p, targetId, crit) {
     const t = this.players.get(targetId);
     if (this.ended || !t || t === p || !p.alive || !t.alive || t.team === p.team) return;
-    // Reach: eye to the closest point of the target's box (3 blocks + lag slack).
+    // Reach: eye to the closest point of the target's box (3 blocks + slack for
+    // lag: the attacker sees others a few ticks in the past).
     const ey = eyeY(p);
     const cx = clamp(p.pos.x, t.pos.x - 0.3, t.pos.x + 0.3);
     const cy = clamp(ey, t.pos.y, t.pos.y + PHYS.height);
     const cz = clamp(p.pos.z, t.pos.z - 0.3, t.pos.z + 0.3);
-    if (Math.hypot(cx - p.pos.x, cy - ey, cz - p.pos.z) > 3.8) return;
+    if (Math.hypot(cx - p.pos.x, cy - ey, cz - p.pos.z) > 4.2) return;
     if (t.invuln > 0) return;   // hurt resistance: 10 ticks between hits
 
     const item = getItem(p.inv.heldId());

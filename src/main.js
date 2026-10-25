@@ -10,7 +10,7 @@ import { getItem } from './game/items.js';
 import { BREAK_DELAY, EAT_TICKS, REACH_BLOCK, REACH_ENTITY, SWING_TICKS, TPS, breakTicks, fallDamage } from './game/rules.js';
 import { Game, TIMELINE } from './game/sim.js';
 import { HostSession, ClientSession } from './net/session.js';
-import { Input } from './player/controls.js';
+import { IS_WINDOWS, Input, keyName } from './player/controls.js';
 import { Body } from './player/physics.js';
 import { DropRenderer } from './render/drops.js';
 import { BlockCursor, Particles } from './render/effects.js';
@@ -21,7 +21,7 @@ import {
 import { ProjectileRenderer } from './render/projectiles.js';
 import { RemotePlayers } from './render/remote.js';
 import { Renderer } from './render/renderer.js';
-import { HUD } from './ui/hud.js';
+import { HUD, MIC_ICON, MUTED_ICON } from './ui/hud.js';
 import { InventoryUI } from './ui/inventoryui.js';
 import { LobbyUI } from './ui/lobbyui.js';
 import { Menu, loadSettings } from './ui/menus.js';
@@ -38,6 +38,7 @@ const hud = new HUD(document.getElementById('hud'));
 const settings = loadSettings();
 setVolume(settings.volume);
 setMusicVolume(settings.music ?? 0.5);
+applyInputSettings(settings);
 
 const particles = new Particles(renderer.scene, null);
 const cursor = new BlockCursor(renderer.scene);
@@ -55,6 +56,7 @@ const state = {
   session: null,
   lobby: null,
   lobbyPeers: [],
+  voiceInfo: null,    // { members: [[id, muted]], talking: [id] } from the host
   world: null, map: null, mapKey: '',
   game: null, me: null,
   lobbyInv: new Inventory(),
@@ -76,6 +78,7 @@ const local = {
   fovMod: 1, prevFovMod: 1,
   hurtTime: 0,
   exh: 0, fall: 0, tpSeq: 0,
+  sq: 0, exhOut: 0, bodyN: 0,      // position update number; hunger not yet sent to the host
   model: null,
   target: null, ghost: null, npc: null, aimPlayer: null,
   predicted: new Set(),
@@ -202,7 +205,7 @@ function resetToLobby() {
   state.screen = 'game';
   state.phase = 'lobby';
   invUI.hide(); shopUI.hide(); lobbyUI.hide();
-  state.ui = null;
+  state.ui = hud.voiceAskShown ? 'voice' : null;
   state.game = null;
   state.me = null;
   state.lobbyPeers = [];
@@ -235,9 +238,86 @@ function enterGame(session) {
   if (kind === 'private') hud.chat(`<span class="system">Your room code is <b>${state.lobby.code}</b>. Share it! Press <b>E</b> to pick teams, <b>Enter</b> to start.</span>`);
   if (kind === 'public') hud.chat(`<span class="system">Public game: it starts when <b>${session.minPlayers}</b> players are here. <b>E</b> picks a team.</span>`);
   if (kind === 'client') hud.chat('<span class="system">Joined! Press <b>E</b> to pick a team, <b>T</b> to chat.</span>');
+  if (IS_WINDOWS && settings.placeKey) hud.chat(`<span class="system">On a laptop touchpad? Press <b>${keyName(settings.placeKey)}</b> to place blocks${settings.attackKey ? ` and <b>${keyName(settings.attackKey)}</b> to hit` : ''} (change them in Settings).</span>`);
   unlockAudio();
-  input.lock();
+  if (session.voice) askVoice();
+  else input.lock();
   if (isHost() && kind !== 'offline') stopBackground = startBackgroundTicks();
+}
+
+// ------------------------------------------------------------- voice chat
+
+// Every online game asks once whether you want to join the voice chat.
+function askVoice() {
+  state.ui = 'voice';
+  input.unlock();
+  hud.setVoiceAsk(true);
+}
+
+hud.voiceAsk.addEventListener('click', (e) => {
+  const choice = e.target.closest('[data-voice]')?.dataset.voice;
+  if (!choice) return;
+  hud.setVoiceAsk(false);
+  state.ui = null;
+  play('click');
+  if (choice === 'yes') joinVoice();
+  else {
+    input.lock();
+    hud.chat('<span class="system">No voice chat. You can join any time from the <b>Esc</b> menu.</span>');
+  }
+});
+
+async function joinVoice() {
+  const session = state.session;
+  const v = session?.voice;
+  if (!v || v.joined) return;
+  const { why } = await v.join();
+  if (state.session !== session) { v.close(); return; }
+  v.setVolume(settings.voiceVolume);
+  const note = {
+    blocked: 'Your microphone is blocked, so you can only listen. Allow it from the icon in the address bar, then leave and join voice chat again.',
+    nomic: 'No microphone found, so you can only listen.',
+    insecure: 'Talking needs a secure (https) page, so you can only listen here.',
+    failed: 'Couldn’t reach the host for voice chat.',
+  }[why];
+  hud.chat(`<span class="system">${note ?? 'You joined the voice chat! Press <b>Esc</b> to mute or leave.'}</span>`);
+  if (!note) play('ding');
+  refreshPauseVoice();
+  // Grab the mouse again (the browser may want a click if the mic question took a while).
+  if (state.screen === 'game' && !state.ui && !input.locked) {
+    input.lock();
+    setTimeout(() => { if (state.screen === 'game' && !state.ui && !input.locked) { hud.setPaused(false); hud.setResume(true); } }, 400);
+  }
+}
+
+function leaveVoice() {
+  state.session?.voice?.leave();
+  state.voiceInfo = null;
+  hud.chat('<span class="system">You left the voice chat.</span>');
+  refreshPauseVoice();
+}
+
+// The voice buttons in the Esc menu.
+function refreshPauseVoice() {
+  const v = state.session?.voice;
+  if (!v) { hud.pauseVoice.innerHTML = ''; return; }
+  hud.pauseVoice.innerHTML = v.joined
+    ? `<div class="row"><button class="btn btn-wood" data-act="voice-mute" ${v.listenOnly ? 'disabled' : ''}>${v.listenOnly ? 'No Mic' : v.muted ? 'Unmute Mic' : 'Mute Mic'}</button>
+       <button class="btn btn-wood" data-act="voice-leave">Leave Voice</button></div>`
+    : '<button class="btn btn-wood" data-act="voice-join">Join Voice Chat</button>';
+}
+
+// Who's in the voice chat (only shown once you've joined it).
+function voicePanel() {
+  const members = state.voiceInfo?.members ?? [];
+  const talking = new Set(state.voiceInfo?.talking ?? []);
+  const rows = members.map(([id, muted]) => {
+    const gp = state.game?.players.get(id);
+    const name = gp?.name ?? state.lobby?.players.find((p) => p.id === id)?.name ?? 'Player';
+    const color = gp && gp.team >= 0 ? TEAMS[gp.team].css : '#ffffff';
+    return `<div class="voice-row ${talking.has(id) && !muted ? 'talking' : ''}">${muted ? MUTED_ICON : MIC_ICON}<b style="color:${color}">${esc(name)}${id === myId() ? ' (you)' : ''}</b></div>`;
+  }).join('');
+  return `<div class="voice-head">${MIC_ICON} Voice Chat <small>${members.length} in</small></div>${rows}`;
 }
 
 let stopBackground = null;
@@ -295,6 +375,9 @@ function leaveToMenu(note) {
   input.unlock();
   document.getElementById('hud').classList.add('hidden');
   hud.setPaused(false);
+  hud.setVoiceAsk(false);
+  hud.setVoice(null);
+  state.voiceInfo = null;
   hud.setDeath(null);
   hud.setBanner(null);
   hud.setEnd(null);
@@ -322,6 +405,8 @@ function onNet(m) {
       lobbyUI.render(state.lobby, myId(), canStart());
       break;
     case 'lsnap':
+      if ((m.n ?? 0) < (state.session.lsnapN ?? -1)) break;   // an older one that arrived late
+      state.session.lsnapN = m.n ?? 0;
       state.lobbyPeers = m.pl.filter((r) => r[0] !== myId());
       break;
     case 'start':
@@ -355,6 +440,13 @@ function onNet(m) {
       play('click');
       break;
     }
+    case 'voice':
+      state.voiceInfo = m;
+      break;
+    case 'voiceLost':
+      hud.chat('<span class="system">Voice chat disconnected. Join again from the <b>Esc</b> menu.</span>');
+      refreshPauseVoice();
+      break;
     case 'closed':
       if (state.screen === 'game') leaveToMenu('Lost connection to the host.');
       break;
@@ -367,6 +459,9 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 function applySnapshot(m) {
   const g = state.game;
   if (!g) return;
+  // Snapshots can arrive out of order: skip older ones and any from the last round.
+  if ((m.rd ?? 1) !== (state.lobby?.round ?? 1) || m.time < (g.snapTime ?? -1)) return;
+  g.snapTime = m.time;
   g.time = m.time;
   while (g.timelineIndex < TIMELINE.length && TIMELINE[g.timelineIndex].at <= g.time) g.timelineIndex++;
   for (const r of m.pl) {
@@ -376,14 +471,16 @@ function applySnapshot(m) {
     p.alive = !!(r[6] & 4);
     p.eliminated = !!(r[6] & 16);
     if (p === state.me) continue;
+    p.netT = m.time;
     p.pos = { x: r[1], y: r[2], z: r[3] };
     p.yaw = r[4]; p.pitch = r[5];
     p.sneak = !!(r[6] & 1); p.sprint = !!(r[6] & 2); p.invis = !!(r[6] & 8); p.flying = !!(r[6] & 32);
     p.heldId = r[7]; p.heldTint = r[8]; p.armorKey = r[9]; p.swing = r[10];
   }
   for (const p of g.players.values()) if (!m.pl.some((r) => r[0] === p.id)) p.connected = false;
-  for (const [id, k, f, b] of m.sc ?? []) {
+  for (const [id, k, f, b, ping] of m.sc ?? []) {
     const p = g.players.get(id);
+    if (p) p.ping = ping ?? null;
     if (p && p !== state.me) { p.kills = k; p.finals = f; p.bedsBroken = b; }
   }
   g.drops = new Map(m.dr.map((r) => [r[0], { id: r[0], item: r[1], count: r[2], x: r[3], y: r[4], z: r[5], tint: r[6] ?? undefined }]));
@@ -478,6 +575,7 @@ function closeUI(relock) {
 function showPause() {
   if (state.screen !== 'game') return;
   state.ui = 'pause';
+  refreshPauseVoice();
   hud.setPaused(true);
 }
 
@@ -810,7 +908,17 @@ function tick() {
     }
   } else {
     if (me) { me.pos.x = b.pos.x; me.pos.y = b.pos.y; me.pos.z = b.pos.z; }
-    s.sendState({ p: [+b.pos.x.toFixed(3), +b.pos.y.toFixed(3), +b.pos.z.toFixed(3)], yaw: +local.yaw.toFixed(3), pitch: +local.pitch.toFixed(3), fl, sw: local.swingCount, exh: +local.exh.toFixed(3), fall: +local.fall.toFixed(2), tq: local.tpSeq });
+    s.sendState({ p: [+b.pos.x.toFixed(3), +b.pos.y.toFixed(3), +b.pos.z.toFixed(3)], yaw: +local.yaw.toFixed(3), pitch: +local.pitch.toFixed(3), fl, sw: local.swingCount, tq: local.tpSeq, sq: ++local.sq });
+    // Positions may get lost on the way; hunger and falls must not, so they
+    // go separately (falls right away, hunger twice a second).
+    if (me) {
+      local.exhOut += local.exh;
+      if (local.fall || (local.exhOut && ++local.bodyN >= 10)) {
+        s.action('body', { exh: +local.exhOut.toFixed(3), fall: +local.fall.toFixed(2) });
+        local.exhOut = 0;
+        local.bodyN = 0;
+      }
+    }
   }
   local.exh = 0;
   local.fall = 0;
@@ -1083,11 +1191,18 @@ function nextRound() {
 
 // ------------------------------------------------------------- per frame
 
+// Ticks behind the newest update to draw other players (see RemotePlayers).
+const NET_DELAY = 2;
+
 function remoteList() {
   if (state.game) {
     return otherPlayers().map((p) => {
       const held = p.heldId !== undefined ? { id: p.heldId, tint: p.heldTint } : (p.inv.held() ?? {});
+      // Players over the network carry the tick of their update; the host's
+      // bots move every game tick.
+      const net = p.netT != null;
       return {
+        t: net ? p.netT : state.game.time, delay: net ? NET_DELAY : 1,
         id: p.id, name: p.name, team: p.team, pos: p.pos, yaw: p.yaw, pitch: p.pitch, sneak: p.sneak, flying: p.flying,
         held: held?.id ?? null, heldTint: held?.tint, armorKey: p.armorKey ?? p.inv.armor.map((a) => a?.id ?? '').join('|'),
         swing: p.swing, visible: !(p.invis || p.effects?.invis), look: p.look,
@@ -1103,7 +1218,7 @@ function remoteList() {
 
 function lobbyRow(r) {
   const lp = state.lobby?.players.find((p) => p.id === r[0]);
-  return { id: r[0], name: lp?.name ?? 'Player', team: -1, pos: { x: r[1], y: r[2], z: r[3] }, yaw: r[4], pitch: r[5], sneak: !!(r[6] & 1), flying: !!(r[6] & 4), held: null, armorKey: '', swing: 0, look: lp?.look };
+  return { id: r[0], name: lp?.name ?? 'Player', team: -1, pos: { x: r[1], y: r[2], z: r[3] }, yaw: r[4], pitch: r[5], sneak: !!(r[6] & 1), flying: !!(r[6] & 4), held: null, armorKey: '', swing: 0, look: lp?.look, t: r[7], delay: NET_DELAY + 1 };
 }
 
 function updateGame(dt) {
@@ -1130,7 +1245,7 @@ function updateGame(dt) {
   }
 
   // Fixed-rate simulation.
-  state.acc = Math.min(state.acc + dt, 0.25);
+  state.acc = Math.min(state.acc + dt, 0.5);   // after a hitch, catch up at most 10 ticks (as Minecraft does)
   while (state.acc >= TICK && state.screen === 'game') { state.acc -= TICK; tick(); }
   if (state.screen !== 'game') return;
   const alpha = state.acc / TICK;
@@ -1262,6 +1377,7 @@ function updateGame(dt) {
     shopUI.traps = state.game.traps.get(state.me.team);
   }
   hud.setTab(input.keys.has('Tab') && !state.ui ? tabList() : null);
+  hud.setVoice(state.session?.voice?.joined ? voicePanel() : null);
   hud.setTopbar(state.game ? topbar() : null);
   invUI.update();
   shopUI.update();
@@ -1269,7 +1385,14 @@ function updateGame(dt) {
     updateGenLabels();
     hud.setBoard(scoreboard());
   } else hud.setBoard(null);
-  hud.setDebug(`${Math.round(1 / Math.max(dt, 1e-3))} fps · xyz ${b.pos.x.toFixed(2)} ${b.pos.y.toFixed(2)} ${b.pos.z.toFixed(2)} · ${b.onGround ? 'ground' : 'air'}${b.sprinting ? ' · sprint' : ''}${b.sneaking ? ' · sneak' : ''}${b.flying ? ' · fly' : ''} · ${(Math.hypot(b.vel.x, b.vel.z) * TPS).toFixed(2)} b/s · ${state.session?.kind}`);
+  hud.setDebug(`${Math.round(1 / Math.max(dt, 1e-3))} fps · xyz ${b.pos.x.toFixed(2)} ${b.pos.y.toFixed(2)} ${b.pos.z.toFixed(2)} · ${b.onGround ? 'ground' : 'air'}${b.sprinting ? ' · sprint' : ''}${b.sneaking ? ' · sneak' : ''}${b.flying ? ' · fly' : ''} · ${(Math.hypot(b.vel.x, b.vel.z) * TPS).toFixed(2)} b/s · ${state.session?.kind}${netInfo()}`);
+}
+
+// F3 line for a client: its connection to the host.
+function netInfo() {
+  const link = state.session?.link;
+  if (!link) return '';
+  return ` · ping ${link.ping ?? '?'} ms ${link.relay ? '(relay)' : '(direct)'}${link.fastOk ? ' · fast' : ''}`;
 }
 
 // Minefun-style bar at the top: a trophy with how many teams are left, then
@@ -1304,7 +1427,8 @@ function tabList() {
       rows += `<div class="tab-team" style="color:${t.css}">${t.name} <span>${bed}</span></div>`;
       for (const p of team) {
         const status = !p.connected ? 'left' : p.eliminated ? 'out' : !p.alive ? 'dead' : '';
-        const stats = `${p.kills ?? 0} kills · ${p.finals ?? 0} finals · ${p.bedsBroken ?? 0} beds`;
+        const ping = pingOf(p);
+        const stats = `${p.kills ?? 0} kills · ${p.finals ?? 0} finals · ${p.bedsBroken ?? 0} beds${ping != null ? ` · <i style="color:${pingColor(ping)}">${ping} ms</i>` : ''}`;
         rows += `<div class="tab-row ${status}"><b>${esc(p.name)}${p === state.me ? ' (you)' : ''}</b><span>${status || stats}</span></div>`;
       }
     }
@@ -1317,6 +1441,13 @@ function tabList() {
   const count = state.lobby?.players.length ?? 1;
   return `<div class="tab-head">BLOCKWARS · ${mode.label} · ${count} player${count === 1 ? '' : 's'}${state.lobby?.code ? ` · ROOM ${state.lobby.code}` : ''}</div>${rows}`;
 }
+
+// Round trip to the host: the host measures every link and sends it round.
+function pingOf(p) {
+  if (isHost()) return state.session.pingOf?.(p.id) ?? null;
+  return p.ping ?? null;
+}
+const pingColor = (ms) => (ms < 80 ? '#7dff6b' : ms < 160 ? '#ffd23f' : '#ff6b6b');
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
 function activeEffects(me) {
@@ -1415,6 +1546,11 @@ function frame(now) {
 
 // ------------------------------------------------------------- wiring
 
+function applyInputSettings(s) {
+  input.binds = { attack: s.attackKey, place: s.placeKey };
+  input.raw = s.rawInput;
+}
+
 window.addEventListener('keydown', (e) => {
   if (state.screen !== 'game' || hud.chatOpen) return;
   if (['F1', 'F3', 'F5', 'Tab'].includes(e.code)) e.preventDefault();
@@ -1487,7 +1623,7 @@ const menu = new Menu(document.getElementById('menu'), settings, {
     const mode = MODES[settings.mode] ?? MODES.solo;
     loadMap(settings.map === 'random' ? (state.map?.id ?? MAPS[0].id) : settings.map, mode.teams);
   },
-  onSettings: (s) => { setVolume(s.volume); setMusicVolume(s.music); },
+  onSettings: (s) => { setVolume(s.volume); setMusicVolume(s.music); applyInputSettings(s); state.session?.voice?.setVolume(s.voiceVolume); },
 });
 
 canvas.addEventListener('click', () => {
@@ -1506,6 +1642,14 @@ hud.pause.addEventListener('click', (e) => {
   if (act2 === 'menu') leaveToMenu();
   else if (act2 === 'settings') menu.openSettings();
   else if (act2 === 'resume') { unlockAudio(); input.lock(); }
+  else if (act2 === 'voice-join') { play('click'); joinVoice(); }
+  else if (act2 === 'voice-leave') { play('click'); leaveVoice(); }
+  else if (act2 === 'voice-mute') {
+    const v = state.session?.voice;
+    v?.setMuted(!v.muted);
+    play('click');
+    refreshPauseVoice();
+  }
 });
 hud.more.addEventListener('click', () => { if (state.screen === 'game' && !state.ui) openUI('inventory'); });
 document.addEventListener('pointerdown', unlockAudio, { once: true });

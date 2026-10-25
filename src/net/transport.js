@@ -34,6 +34,16 @@ export function openPeer(id) {
   });
 }
 
+// A second channel on the same connection for positions, sent like UDP:
+// unordered and never resent. On the main (reliable, ordered) channel one lost
+// packet holds up everything behind it until it's resent, which is what made
+// other players freeze for a moment on patchy Wi-Fi. Both sides create it
+// with the same id, so it needs no extra handshake.
+const FAST = { negotiated: true, id: 42, ordered: false, maxRetransmits: 0 };
+const FAST_BACKLOG = 64 * 1024;      // skip an update rather than queue behind a slow link
+const RELIABLE_BACKLOG = 256 * 1024;
+const JSON_LIMIT = 16000;            // PeerJS refuses bigger JSON messages
+
 // A message pipe to one other player (JSON messages).
 export class Link {
   constructor(conn) {
@@ -41,13 +51,75 @@ export class Link {
     this.id = conn.peer;
     this.handlers = [];
     this.closeHandlers = [];
-    conn.on('data', (d) => { for (const h of this.handlers) h(d); });
+    this.ping = null;      // round trip in ms, from the browser's connection stats
+    this.relay = false;    // true when the traffic goes through the TURN relay
+    conn.on('data', (d) => this.deliver(d));
     conn.on('close', () => this.closed());
     conn.on('error', () => this.closed());
+    this.fast = null;
+    this.fastOk = false;
+    if (conn.open) this.openFast();
+    else conn.on('open', () => this.openFast());
+    this.statsTimer = setInterval(() => this.readStats(), 2000);
+    this.readStats();
+  }
+
+  deliver(d) { for (const h of this.handlers) h(d); }
+
+  // The fast channel is only trusted once something arrives on it, so an
+  // older copy of the game on the other end still gets everything.
+  openFast() {
+    if (this.fast || this.isClosed) return;
+    try {
+      const ch = this.conn.peerConnection?.createDataChannel('fast', FAST);
+      if (!ch) return;
+      ch.onopen = () => this.sendRaw(ch, '{"t":"fp"}');
+      ch.onmessage = (e) => {
+        this.fastOk = true;
+        let d;
+        try { d = JSON.parse(e.data); } catch { return; }
+        if (d && d.t !== 'fp') this.deliver(d);
+      };
+      this.fast = ch;
+    } catch { this.fast = null; }
+  }
+
+  sendRaw(ch, text) { try { ch.send(text); } catch { /* channel closing */ } }
+
+  // For positions and snapshots: a newer one always follows, so it's fine to
+  // drop one when the link is backed up.
+  sendFast(msg) {
+    if (this.isClosed) return;
+    const ch = this.fast;
+    if (ch?.readyState === 'open') {
+      if (ch.bufferedAmount > FAST_BACKLOG) return;
+      if (this.fastOk) { this.sendRaw(ch, JSON.stringify(msg)); return; }
+      this.sendRaw(ch, '{"t":"fp"}');   // let the other side know we have it
+    }
+    if ((this.conn.dataChannel?.bufferedAmount ?? 0) > RELIABLE_BACKLOG) return;
+    const text = JSON.stringify(msg);
+    if (text.length < JSON_LIMIT) this.send(msg);
+  }
+
+  // Ping and route of the connection actually in use.
+  async readStats() {
+    const pc = this.conn.peerConnection;
+    if (!pc?.getStats || this.isClosed) return;
+    try {
+      const stats = await pc.getStats();
+      let pair = null;
+      stats.forEach((r) => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId); });
+      if (!pair) stats.forEach((r) => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+      if (!pair) return;
+      if (pair.currentRoundTripTime != null) this.ping = Math.round(pair.currentRoundTripTime * 1000);
+      const local = stats.get(pair.localCandidateId), remote = stats.get(pair.remoteCandidateId);
+      this.relay = local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+    } catch { /* stats unavailable */ }
   }
   closed() {
     if (this.isClosed) return;
     this.isClosed = true;
+    clearInterval(this.statsTimer);
     for (const h of this.closeHandlers) h();
   }
   onData(h) { this.handlers.push(h); }

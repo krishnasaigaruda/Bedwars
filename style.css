@@ -179,6 +179,16 @@ img { image-rendering: pixelated; }
 .slider input { width: 100%; accent-color: var(--gold); }
 .toggle { display: flex; align-items: center; gap: 10px; font-weight: 800; text-shadow: 0 2px 0 var(--ink); cursor: pointer; }
 .toggle input { width: 20px; height: 20px; accent-color: var(--green); }
+.bind-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 800; text-shadow: 0 2px 0 var(--ink); }
+.bind-row small { font-weight: 600; opacity: 0.75; }
+.btn-key {
+  min-width: 92px; padding: 5px 12px; cursor: pointer;
+  font: 400 15px 'Lilita One', Rubik, sans-serif; color: var(--ink);
+  background: var(--cream); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 0 3px 0 var(--ink);
+}
+.btn-key:hover { filter: brightness(1.05); }
+.btn-key.listening { background: var(--gold); }
+.settings-note { font-size: 13px; font-weight: 700; line-height: 1.4; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); text-shadow: 0 1px 0 var(--ink); }
 .controls { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; font-size: 14px; font-weight: 700; text-shadow: 0 1px 0 var(--ink); }
 kbd {
   font: 400 13px 'Lilita One', Rubik, sans-serif;
@@ -348,6 +358,32 @@ kbd {
 
 .pause { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(20, 10, 0, 0.45); pointer-events: auto; }
 .pause-card { display: flex; flex-direction: column; gap: 10px; min-width: 260px; }
+.pause-voice { display: flex; flex-direction: column; gap: 10px; }
+.pause-voice:empty { display: none; }
+.pause-voice .row { display: flex; gap: 8px; }
+.pause-voice .row .btn { flex: 1; }
+
+/* ------------------------------------------------------------ voice chat */
+
+.mic { width: 12px; height: 16px; fill: currentColor; flex: none; }
+.voice-card { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 360px; text-align: center; }
+.voice-big { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; background: var(--cream); color: var(--ink); border: 3px solid var(--ink); box-shadow: 0 4px 0 var(--ink); }
+.voice-big .mic { width: 22px; height: 30px; }
+.voice-text { font-weight: 800; font-size: 16px; line-height: 1.35; text-shadow: 0 2px 0 var(--ink); }
+.voice-small { font-weight: 700; font-size: 13px; opacity: 0.85; text-shadow: 0 1px 0 var(--ink); }
+.voice-buttons { display: flex; gap: 10px; width: 100%; }
+.voice-buttons .btn { flex: 1; }
+.voice-panel {
+  position: absolute; right: 12px; bottom: 12px; min-width: 170px; max-width: 240px;
+  background: rgba(25, 16, 10, 0.62); border-radius: 12px; padding: 8px 10px; font-weight: 700; font-size: 14px;
+}
+.voice-head { display: flex; align-items: center; gap: 6px; font: 400 16px 'Lilita One', Rubik, sans-serif; color: var(--gold); margin-bottom: 4px; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
+.voice-head small { font: 700 11px Rubik, sans-serif; color: #fff; opacity: 0.7; -webkit-text-stroke: 0; margin-left: auto; }
+.voice-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; text-shadow: 0 1px 0 var(--ink); }
+.voice-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-row .mic { color: rgba(255, 255, 255, 0.55); }
+.voice-row.talking .mic { color: #7dff6b; filter: drop-shadow(0 0 4px #7dff6b); }
+.voice-row .mic.muted { color: rgba(255, 255, 255, 0.4); }
 
 /* ------------------------------------------------------------ inventory & shop */
 
@@ -428,6 +464,7 @@ kbd {
   .islot { width: 34px; height: 34px; }
   .islot img { width: 24px; height: 24px; }
   .keyhints, .board { display: none; }
+  .voice-panel { bottom: auto; top: 64px; }
   .hunger { width: 130px; }
   .heart { width: 18px; height: 18px; }
   .shop-body { flex-direction: column; }

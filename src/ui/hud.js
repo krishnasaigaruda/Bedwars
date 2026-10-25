@@ -22,6 +22,9 @@ export function iconURL(id, tint) {
   return iconCache.get(key);
 }
 
+export const MIC_ICON = '<svg class="mic" viewBox="0 0 12 16"><rect x="3.5" y="1" width="5" height="9" rx="2.5"/><path d="M1.5 7.5a4.5 4.5 0 0 0 9 0M6 12v3M3.5 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+export const MUTED_ICON = '<svg class="mic muted" viewBox="0 0 12 16"><rect x="3.5" y="1" width="5" height="9" rx="2.5"/><path d="M1.5 7.5a4.5 4.5 0 0 0 9 0M6 12v3M3.5 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M1 1l10 14" stroke="#ff4d4d" stroke-width="2" stroke-linecap="round"/></svg>';
+
 const HEART = (cls) => `<svg class="heart ${cls}" viewBox="0 0 9 9"><path d="M1 0h2v1h1v1h1V1h1V0h2v1h1v3H8v1H7v1H6v1H5v1H4V7H3V6H2V5H1V4H0V1h1z"/></svg>`;
 
 export class HUD {
@@ -82,8 +85,17 @@ export class HUD {
     this.pause = el('div', 'pause hidden', root);
     this.pause.innerHTML = `<div class="panel pause-card"><div class="panel-title">Paused</div>
       <button class="btn btn-green" data-act="resume">Back to Game</button>
+      <div class="pause-voice"></div>
       <button class="btn btn-wood" data-act="settings">Settings</button>
       <button class="btn btn-red" data-act="menu">Leave Game</button></div>`;
+    this.pauseVoice = this.pause.querySelector('.pause-voice');
+    this.voice = el('div', 'voice-panel hidden', root);
+    this.voiceAsk = el('div', 'pause hidden', root, `<div class="panel voice-card">
+      <div class="voice-big">${MIC_ICON}</div>
+      <div class="panel-title">Voice Chat</div>
+      <div class="voice-text">Do you want to join the voice chat and talk with the other players in this game?</div>
+      <div class="voice-buttons"><button class="btn btn-green" data-voice="yes">Yes</button><button class="btn btn-red" data-voice="no">No</button></div>
+      <div class="voice-small">You can join or leave any time from the <b>Esc</b> menu.</div></div>`);
 
     this.timers = { title: 0, action: 0, item: 0 };
     this.invVersion = -1;
@@ -252,6 +264,13 @@ export class HUD {
     this.tab.classList.toggle('hidden', html == null);
     if (html != null && html !== this.tabHtml) { this.tabHtml = html; this.tab.innerHTML = html; }
   }
+
+  setVoice(html) {
+    this.voice.classList.toggle('hidden', html == null);
+    if (html != null && html !== this.voiceHtml) { this.voiceHtml = html; this.voice.innerHTML = html; }
+  }
+  setVoiceAsk(on) { this.voiceAsk.classList.toggle('hidden', !on); }
+  get voiceAskShown() { return !this.voiceAsk.classList.contains('hidden'); }
 
   setBlind(on) { this.blind.classList.toggle('hidden', !on); }
 

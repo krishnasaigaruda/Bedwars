@@ -1,9 +1,38 @@
-// Other players: one PlayerModel each, eased toward the latest network
-// position so 20 updates a second still look smooth.
+// Other players: one PlayerModel each. Positions come 20 times a second,
+// each marked with the tick it's from. A player is drawn a couple of ticks in
+// the past, moving smoothly between the updates on either side, so updates
+// that arrive late or bunched up (Wi-Fi hiccups) don't make them stutter or
+// freeze. If updates stop, they keep going the way they were for a few ticks
+// and then wait.
 import * as THREE from 'three';
 import { PlayerModel } from './models.js';
 
 const LOBBY_TEAM = 5;   // white hoodies while waiting in the lobby
+const EXTRAPOLATE = 3;  // ticks to keep moving past the newest update
+const MAX_GAP = 40;     // a jump in tick numbers bigger than this starts over
+
+const lerpAngle = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
+// Teleports and respawns snap instead of sliding across the map.
+const jumped = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) > 4;
+
+function sampleAt(s, t) {
+  const last = s[s.length - 1];
+  if (s.length === 1) return last;
+  if (t >= last.t) {
+    const prev = s[s.length - 2];
+    const span = last.t - prev.t;
+    if (span > 4 || jumped(prev, last)) return last;
+    const k = Math.min(t - last.t, EXTRAPOLATE) / span;
+    return { x: last.x + (last.x - prev.x) * k, y: last.y, z: last.z + (last.z - prev.z) * k, yaw: last.yaw };
+  }
+  let i = s.length - 1;
+  while (i > 0 && s[i - 1].t > t) i--;
+  if (i === 0) return s[0];
+  const a = s[i - 1], b = s[i];
+  const k = (t - a.t) / (b.t - a.t);
+  if (jumped(a, b)) return k < 0.5 ? a : b;
+  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k, yaw: lerpAngle(a.yaw, b.yaw, k) };
+}
 
 export class RemotePlayers {
   constructor(scene) {
@@ -17,7 +46,8 @@ export class RemotePlayers {
     this.views.clear();
   }
 
-  // list: [{ id, name, team, pos, yaw, pitch, sneak, flying, held, heldTint, armorKey, swing, visible }]
+  // list: [{ id, name, team, pos, yaw, pitch, sneak, flying, held, heldTint, armorKey, swing, visible, t, delay }]
+  // t: the tick the position is from; delay: how many ticks behind to draw.
   sync(list, dt) {
     const seen = new Set();
     for (const p of list) {
@@ -30,21 +60,25 @@ export class RemotePlayers {
         const model = new PlayerModel({ team, name: p.name, showName: true, look: p.look });
         model.root.position.set(p.pos.x, p.pos.y, p.pos.z);
         this.group.add(model.root);
-        v = { model, team, name: p.name, lookKey, yaw: p.yaw, swing: p.swing ?? 0, swingT: 0, hurtT: 0, lastPos: { ...p.pos }, speed: 0 };
+        v = { model, team, name: p.name, lookKey, yaw: p.yaw, swing: p.swing ?? 0, swingT: 0, hurtT: 0, lastPos: { ...p.pos }, speed: 0, samples: [], play: null };
         this.views.set(p.id, v);
       }
       const m = v.model;
       m.root.visible = p.visible !== false;
-      const k = Math.min(1, dt * 14);
       const r = m.root.position;
       const before = { x: r.x, z: r.z };
-      r.x += (p.pos.x - r.x) * k;
-      r.y += (p.pos.y - r.y) * k;
-      r.z += (p.pos.z - r.z) * k;
-      if (r.distanceTo(p.pos) > 8) r.set(p.pos.x, p.pos.y, p.pos.z);
-      let dy = p.yaw - v.yaw;
-      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      v.yaw += dy * k;
+      if (p.t != null) {
+        const at = this.place(v, p, dt);
+        r.set(at.x, at.y, at.z);
+        v.yaw = at.yaw;
+      } else {
+        const k = Math.min(1, dt * 14);
+        r.x += (p.pos.x - r.x) * k;
+        r.y += (p.pos.y - r.y) * k;
+        r.z += (p.pos.z - r.z) * k;
+        if (r.distanceTo(p.pos) > 8) r.set(p.pos.x, p.pos.y, p.pos.z);
+        v.yaw = lerpAngle(v.yaw, p.yaw, k);
+      }
       m.root.rotation.y = v.yaw;
       const sp = Math.hypot(r.x - before.x, r.z - before.z) / Math.max(dt, 1e-3);
       v.speed += (sp - v.speed) * Math.min(1, dt * 8);
@@ -70,6 +104,23 @@ export class RemotePlayers {
     for (const [id, v] of this.views) {
       if (!seen.has(id)) { this.group.remove(v.model.root); this.views.delete(id); }
     }
+  }
+
+  // Keeps the last few updates and a playback clock that runs DELAY ticks
+  // behind the newest one, speeding up or slowing down a little to stay there.
+  place(v, p, dt) {
+    const s = v.samples;
+    if (s.length && Math.abs(p.t - s[s.length - 1].t) > MAX_GAP) { s.length = 0; v.play = null; }
+    if (!s.length || p.t > s[s.length - 1].t) {
+      s.push({ t: p.t, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw });
+      if (s.length > 30) s.shift();
+    }
+    const newest = s[s.length - 1].t;
+    const target = newest - (p.delay ?? 2);
+    if (v.play == null || Math.abs(target - v.play) > 10) v.play = target;
+    else v.play += dt * 20 + (target - v.play) * Math.min(1, dt * 2);
+    v.play = Math.min(v.play, newest + EXTRAPOLATE);
+    return sampleAt(s, v.play);
   }
 
   hurt(id) {

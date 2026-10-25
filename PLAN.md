@@ -35,7 +35,18 @@ the design changed while we built it.
 - **Chests:** Team Chest (shared) and Ender Chest (personal) at every base. Contents stay through deaths.
 - **Multiplayer:** host-authoritative over PeerJS (`src/net/`).
   - Private room codes (`?room=CODE` links) and Quick Play slots.
-  - Lobby with flying and a team picker, chat on T, player list on Tab.
+  - Lobby with flying and a team picker, chat on T, player list on Tab (with each player's ping).
+  - Positions and snapshots go over a second, unreliable data channel (`Link.sendFast`), numbered so
+    late ones are dropped. Everything else stays on the reliable one. Other players are drawn 2 ticks
+    in the past and interpolated (`render/remote.js`), so Wi-Fi hiccups don't freeze them.
+- **Voice chat** (`src/net/voice.js`): every online game asks "join voice chat?" (Yes/No); join,
+  mute or leave later from the Esc menu. Players only connect to the host, so the host mixes:
+  each player calls the host with their mic and gets back one stream of everyone else. The host
+  sends the member list and who's talking; a panel at the bottom right shows it once you've joined.
+  No mic, or mic blocked, means listen-only.
+- **Controls:** Place and attack also have keys (F and R by default, set in Settings) for laptop
+  touchpads; Windows ignores touchpad taps while a key is held. Raw mouse input is off by default
+  on Windows because touchpads need the system's pointer acceleration.
 - **Dev server:** don't use `python3 -m http.server`; it lets the browser cache old code. Run the
   no-cache script instead, from the project folder:
   `python3 /private/tmp/claude-501/-Users-krishna-Documents-git-Bedwars/0efe6c7f-f990-465f-a579-acd512082ce1/scratchpad/serve.py . 8642`

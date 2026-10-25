@@ -4,11 +4,16 @@
 //
 // Client -> host: probe, hello, team, st (movement, 20/s), act, chat
 // Host -> client: info, welcome, reject, lobby, start, snap (20/s), me, ev, chat, blk
+// st, snap and lsnap go over the fast channel (see Link.sendFast), so they can
+// arrive out of order or not at all: each carries a number and older ones are
+// ignored.
 import { CENTER, LOBBY_Y, MODES, TEAMS } from '../config.js';
 import { getItem } from '../game/items.js';
+import { fallDamage } from '../game/rules.js';
 import { Game } from '../game/sim.js';
 import { Bot, botName } from '../game/bots.js';
 import { Body } from '../player/physics.js';
+import { VoiceCall, VoiceHub } from './voice.js';
 
 // Events that only matter to the player they're about.
 const PRIVATE = new Set(['pickup', 'ate', 'bought', 'kb', 'tp', 'reward', 'deny']);
@@ -48,6 +53,7 @@ export class HostSession {
       players: [{ id: this.myId, name, team: -1, host: true, look: cleanLook(look) }],
     };
     this.lastMe = new Map();
+    this.lastSq = new Map();
     this.lobbyPos = new Map();
     this.ticks = 0;
     // Practice vs Bots: the bots wait in the lobby with you, one per free slot.
@@ -55,7 +61,11 @@ export class HostSession {
     if (bots) {
       for (let n = 0; n < this.maxPlayers - 1; n++) this.lobby.players.push({ id: `bot${n}`, name: botName(n), team: -1, bot: true });
     }
-    if (peer) peer.on('connection', (conn) => this.accept(conn));
+    this.voice = peer ? new VoiceHub(this) : null;
+    if (peer) {
+      peer.on('connection', (conn) => this.accept(conn));
+      peer.on('call', (call) => this.voice.answer(call));
+    }
     if (kind === 'offline') this.startCountdown(10);
   }
 
@@ -85,6 +95,7 @@ export class HostSession {
     else if (m.t === 'st') this.clientState(link.id, m);
     else if (m.t === 'act') this.handleAction(link.id, m);
     else if (m.t === 'chat') this.chat(link.id, m.text);
+    else if (m.t === 'vmute') this.voice?.setMemberMuted(link.id, m.muted);
   }
 
   join(link, m) {
@@ -101,6 +112,7 @@ export class HostSession {
   dropLink(link) {
     if (!this.links.has(link.id)) return;
     this.links.delete(link.id);
+    this.voice?.drop(link.id);
     const p = this.lobby.players.find((x) => x.id === link.id);
     this.lobby.players = this.lobby.players.filter((x) => x.id !== link.id);
     if (p) this.systemChat(`${p.name} left the game`);
@@ -236,14 +248,17 @@ export class HostSession {
       }
       b.tick(this.world, mv);
       if (b.pos.y < LOBBY_Y - 10) { const [x, z] = spot(); b.teleport(x, LOBBY_Y + 1.5, z); }
-      this.lobbyPos.set(p.id, { p: [b.pos.x, b.pos.y, b.pos.z], yaw: w.yaw, pitch: 0, fl: 0 });
+      this.lobbyPos.set(p.id, { p: [b.pos.x, b.pos.y, b.pos.z], yaw: w.yaw, pitch: 0, fl: 0, sq: this.ticks });
     }
   }
 
   tick(dt) {
     this.ticks++;
     if (!this.game && this.withBots) this.wanderBots();
-    if (!this.game && this.links.size && this.ticks % 2 === 0) this.broadcast({ t: 'lsnap', pl: this.lobbyView() });
+    if (!this.game && this.links.size && this.ticks % 2 === 0) {
+      const msg = { t: 'lsnap', n: this.ticks, pl: this.lobbyView() };
+      for (const l of this.links.values()) l.sendFast(msg);
+    }
     if (this.lobby.state === 'countdown') {
       const before = Math.ceil(this.lobby.countdown);
       this.lobby.countdown -= dt;
@@ -283,14 +298,17 @@ export class HostSession {
     const pr = [...g.projectiles.values()].map((q) => [q.id, q.kind, +q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2), +q.vx.toFixed(2), +q.vy.toFixed(2), +q.vz.toFixed(2), q.fuse ?? 0]);
     const gens = g.gens.filter((x) => x.kind === 'gold' || x.kind === 'diamond').map((x) => [x.tier, x.timer]);
     const beds = [...g.beds].filter(([, v]) => v).map(([k]) => k);
-    const sc = [...g.players.values()].map((p) => [p.id, p.kills, p.finals, p.bedsBroken]);
-    return { t: 'snap', time: g.time, pl, dr, pr, gens, beds, sc };
+    const sc = [...g.players.values()].map((p) => [p.id, p.kills, p.finals, p.bedsBroken, this.pingOf(p.id)]);
+    return { t: 'snap', rd: this.lobby.round ?? 1, time: g.time, pl, dr, pr, gens, beds, sc };
   }
+
+  // Round trip to a player in ms (null for bots and the host itself).
+  pingOf(id) { return this.links.get(id)?.ping ?? null; }
 
   sendSnapshots() {
     const snap = this.snapshot();
     for (const [id, link] of this.links) {
-      link.send(snap);
+      link.sendFast(snap);
       const p = this.game.players.get(id);
       if (!p) continue;
       const me = this.meMessage(p);
@@ -318,16 +336,20 @@ export class HostSession {
   // ------------------------------------------------------------ input from players
 
   clientState(id, m) {
+    if (!Array.isArray(m.p) || m.p.length !== 3) return;
+    if (typeof m.sq === 'number') {
+      if (m.sq <= (this.lastSq.get(id) ?? -1)) return;   // an older update that arrived late
+      this.lastSq.set(id, m.sq);
+    }
     const p = this.game?.players.get(id);
     if (!p) { this.lobbyPos?.set(id, m); return; }
     if (!p.alive) return;
     if ((m.tq ?? 0) !== p.tpSeq) return;   // sent before they saw their latest teleport
+    p.netT = m.sq;
     p.pos = { x: m.p[0], y: m.p[1], z: m.p[2] };
     p.yaw = m.yaw; p.pitch = m.pitch;
     p.sneak = !!(m.fl & 1); p.sprint = !!(m.fl & 2); p.flying = !!(m.fl & 4);
     p.swing = m.sw ?? p.swing;
-    if (m.exh) this.game.addExhaustion(p, Math.min(2, m.exh));
-    if (m.fall > 3) this.game.damage(p, Math.ceil(m.fall - 3), 'fall', { bypassArmor: true });
   }
 
   // Runs one action for a player; returns null or the reason it failed.
@@ -349,6 +371,7 @@ export class HostSession {
       case 'use': why = g.useItem(p, m.slot, m.eye, m.dir); if (why === 'nothing') why = null; break;
       case 'deploy': why = g.deploy(p, m.slot, m.x, m.y, m.z, m.fx, m.fz); if (why === 'nothing') why = null; break;
       case 'select': p.inv.selected = Math.max(0, Math.min(8, m.slot | 0)); break;
+      case 'body': this.body(p, m); break;
       case 'inv': why = this.rearrange(p, m); break;
       default: why = 'unknown action';
     }
@@ -359,6 +382,14 @@ export class HostSession {
       this.lastMe.delete(id);
     }
     return why;
+  }
+
+  // Hunger and fall damage from a client's own movement. These come on the
+  // reliable channel so a lost packet can't skip them.
+  body(p, m) {
+    if (!p.alive) return;
+    if (m.exh > 0) this.game.addExhaustion(p, Math.min(4, m.exh));
+    if (m.fall > 3) this.game.damage(p, fallDamage(Math.min(m.fall, 256)), 'fall', { bypassArmor: true });
   }
 
   // Inventory moves from a client's inventory screen. Accepted only if the
@@ -412,7 +443,7 @@ export class HostSession {
     const out = [];
     for (const [id, m] of this.lobbyPos) {
       if (!this.lobby.players.some((p) => p.id === id)) { this.lobbyPos.delete(id); continue; }
-      out.push([id, m.p[0], m.p[1], m.p[2], m.yaw, m.pitch, m.fl]);
+      out.push([id, m.p[0], m.p[1], m.p[2], m.yaw, m.pitch, m.fl, m.sq ?? this.ticks]);
     }
     return out;
   }
@@ -421,6 +452,7 @@ export class HostSession {
   setTeam(team) { this.pickTeam(this.myId, team); }
 
   leave() {
+    this.voice?.close();
     for (const l of this.links.values()) l.close();
     this.links.clear();
     this.peer?.destroy();
@@ -439,6 +471,7 @@ export class ClientSession {
     this.lobby = null;
     this.onMessage = () => {};
     this.queue = [];
+    this.voice = new VoiceCall(this);
     link.onData((m) => {
       if (m.t === 'lobby' || m.t === 'welcome') this.lobby = m.lobby;
       if (m.t === 'start' || m.t === 'round') this.lobby = m.lobby;
@@ -462,12 +495,12 @@ export class ClientSession {
 
   get mode() { return MODES[this.lobby?.mode] ?? MODES.solo; }
   tick() {}
-  sendState(st) { this.link.send({ t: 'st', ...st }); }
+  sendState(st) { this.link.sendFast({ t: 'st', ...st }); }
   action(a, data) { this.link.send({ t: 'act', a, ...data }); return null; }
   sendChat(text) { this.link.send({ t: 'chat', text }); }
   setTeam(team) { this.link.send({ t: 'team', team }); }
   requestStart() {}
-  leave() { this.link.close(); this.peer?.destroy(); }
+  leave() { this.voice.close(); this.link.close(); this.peer?.destroy(); }
 }
 
 export { TEAMS };
