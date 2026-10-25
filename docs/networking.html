@@ -187,7 +187,7 @@ code, .term { font: 500 0.88em var(--mono); background: var(--panel); border: 1p
           <rect x="300" y="12" width="160" height="40" rx="8" class="box"/><text x="380" y="37" text-anchor="middle" class="t">PeerJS server</text>
           <rect x="570" y="12" width="160" height="40" rx="8" class="box-a"/><text x="650" y="37" text-anchor="middle" class="t">Joiner</text>
           <line x1="110" y1="52" x2="110" y2="505" class="life"/>
-          <line x1="380" y1="52" x2="380" y2="505" class="life"/>
+          <line x1="380" y1="52" x2="380" y2="428" class="life"/>
           <line x1="650" y1="52" x2="650" y2="505" class="life"/>
 
           <path d="M110 82 H372" class="ln" marker-end="url(#b1)"/><text x="120" y="76" class="ts">1  open peer as "bwfun1-p-ABCDE"</text>
@@ -196,14 +196,19 @@ code, .term { font: 500 0.88em var(--mono); background: var(--panel); border: 1p
           <path d="M380 192 H118" class="ln" marker-end="url(#b2)"/><text x="130" y="186" class="tl">4  forward the offer</text>
           <path d="M110 232 H372" class="ln" marker-end="url(#b2)"/><text x="120" y="226" class="tl">5  answer</text>
           <path d="M380 264 H642" class="ln" marker-end="url(#b2)"/><text x="392" y="258" class="tl">6  forward the answer</text>
-          <path d="M110 300 H372" class="ln" marker-end="url(#b1)"/><path d="M650 312 H388" class="ln" marker-end="url(#b1)"/>
-          <text x="196" y="296" class="ts">7  candidate addresses</text><text x="420" y="330" class="ts">(both ways)</text>
-          <rect x="140" y="346" width="480" height="40" rx="6" class="box"/>
-          <text x="380" y="371" text-anchor="middle" class="ts">8  ICE: both sides try every address pair until one works</text>
+          <path d="M110 290 H372" class="ln" marker-end="url(#b1)"/><path d="M380 290 H642" class="ln" stroke-dasharray="5 4" marker-end="url(#b1)"/>
+          <text x="120" y="284" class="ts">7  host's addresses</text><text x="392" y="284" class="ts">forwarded to joiner</text>
+          <path d="M650 322 H388" class="ln" marker-end="url(#b1)"/><path d="M380 322 H118" class="ln" stroke-dasharray="5 4" marker-end="url(#b1)"/>
+          <text x="400" y="316" class="ts">joiner's addresses</text><text x="130" y="316" class="ts">forwarded to host</text>
+          <text x="380" y="340" text-anchor="middle" class="ts">(these start right after the offer, alongside 3–6)</text>
+          <rect x="140" y="352" width="480" height="36" rx="6" class="box"/>
+          <text x="380" y="375" text-anchor="middle" class="ts">8  ICE: browser to browser, try address pairs until one works</text>
           <path d="M118 418 H642" class="ln-ok" marker-end="url(#b3)"/><path d="M642 418 H118" class="ln-ok" marker-end="url(#b3)"/>
           <text x="380" y="410" text-anchor="middle" class="tok">9  data channel open: direct line</text>
-          <path d="M650 456 H118" class="ln" marker-end="url(#b1)"/><text x="400" y="450" class="ts">10 { t: 'hello', name, look }</text>
-          <path d="M110 492 H642" class="ln" marker-end="url(#b1)"/><text x="120" y="486" class="ts">11 { t: 'welcome', lobby }</text>
+          <rect x="104" y="434" width="552" height="70" rx="6" class="box-dash"/>
+          <text x="380" y="448" text-anchor="middle" class="tok">over the direct line (the server is no longer used)</text>
+          <path d="M650 470 H118" class="ln-ok" marker-end="url(#b3)"/><text x="400" y="464" class="tok">10 { t: 'hello', name, look }</text>
+          <path d="M110 496 H642" class="ln-ok" marker-end="url(#b3)"/><text x="120" y="490" class="tok">11 { t: 'welcome', lobby }</text>
         </svg>
       </div>
     </div>
@@ -221,56 +226,72 @@ code, .term { font: 500 0.88em var(--mono); background: var(--panel); border: 1p
     <div class="pane">
       <div class="pane-bar"><i></i><i></i><i></i><span>architecture</span></div>
       <div class="pane-body">
-        <svg viewBox="0 0 760 380" role="img" aria-label="Host browser runs the Game simulation; clients send positions and actions and receive snapshots and events over two channels.">
+        <svg viewBox="0 0 760 420" role="img" aria-label="All network traffic goes between HostSession and ClientSession: positions and actions in, snapshots and events out. Inside the host, the session feeds the real Game; inside a joiner, snapshots overwrite the Shadow Game and physics supplies your position. Voice runs between the voice hub and each joiner's voice call.">
           <defs>
-            <marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="ah-ok"/></marker>
-            <marker id="c2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="ah-blue"/></marker>
+            <marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah-ok"/></marker>
+            <marker id="c2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah-blue"/></marker>
+            <marker id="c3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker>
           </defs>
-          <rect x="16" y="16" width="300" height="348" rx="12" class="box-a"/>
-          <text x="166" y="44" text-anchor="middle" class="t">Host browser</text>
-          <rect x="40" y="62" width="252" height="70" rx="8" class="box"/>
-          <text x="166" y="88" text-anchor="middle" class="t">HostSession</text>
-          <text x="166" y="108" text-anchor="middle" class="ts">lobby, links, snapshots</text>
-          <text x="166" y="124" text-anchor="middle" class="ts">session.js</text>
-          <rect x="40" y="148" width="252" height="86" rx="8" class="box"/>
-          <text x="166" y="174" text-anchor="middle" class="t">Game (the real one)</text>
-          <text x="166" y="194" text-anchor="middle" class="ts">20 ticks a second</text>
-          <text x="166" y="210" text-anchor="middle" class="ts">blocks, damage, beds, shop</text>
-          <text x="166" y="226" text-anchor="middle" class="ts">sim.js + combat.js</text>
-          <rect x="40" y="250" width="120" height="96" rx="8" class="box"/>
-          <text x="100" y="278" text-anchor="middle" class="t">Bots</text>
-          <text x="100" y="298" text-anchor="middle" class="ts">practice only</text>
-          <text x="100" y="314" text-anchor="middle" class="ts">bots.js</text>
-          <rect x="172" y="250" width="120" height="96" rx="8" class="box"/>
-          <text x="232" y="278" text-anchor="middle" class="t">Voice hub</text>
-          <text x="232" y="298" text-anchor="middle" class="ts">mixes mics</text>
-          <text x="232" y="314" text-anchor="middle" class="ts">voice.js</text>
+          <!-- host side -->
+          <rect x="16" y="14" width="260" height="392" rx="12" class="box-a"/>
+          <text x="146" y="38" text-anchor="middle" class="t">Host browser</text>
+          <rect x="36" y="52" width="220" height="104" rx="8" class="box"/>
+          <text x="146" y="92" text-anchor="middle" class="t">HostSession</text>
+          <text x="146" y="112" text-anchor="middle" class="ts">lobby, links, snapshots</text>
+          <text x="146" y="130" text-anchor="middle" class="ts">session.js</text>
+          <rect x="36" y="196" width="220" height="70" rx="8" class="box"/>
+          <text x="146" y="222" text-anchor="middle" class="t">Game (the real one)</text>
+          <text x="146" y="241" text-anchor="middle" class="ts">20 ticks/s · sim.js</text>
+          <text x="146" y="257" text-anchor="middle" class="ts">blocks, damage, beds</text>
+          <path d="M100 158 V192" class="ln" marker-start="url(#c3)" marker-end="url(#c3)"/>
+          <text x="108" y="180" class="ts">actions in, state out</text>
+          <rect x="36" y="300" width="104" height="86" rx="8" class="box"/>
+          <text x="88" y="334" text-anchor="middle" class="t">Bots</text>
+          <text x="88" y="354" text-anchor="middle" class="ts">practice</text>
+          <text x="88" y="370" text-anchor="middle" class="ts">bots.js</text>
+          <path d="M88 298 V270" class="ln" marker-end="url(#c3)"/>
+          <rect x="152" y="300" width="104" height="86" rx="8" class="box"/>
+          <text x="204" y="334" text-anchor="middle" class="t">Voice hub</text>
+          <text x="204" y="354" text-anchor="middle" class="ts">mixes mics</text>
+          <text x="204" y="370" text-anchor="middle" class="ts">voice.js</text>
 
-          <rect x="470" y="16" width="274" height="348" rx="12" class="box-a"/>
-          <text x="607" y="44" text-anchor="middle" class="t">Each joiner</text>
-          <rect x="494" y="62" width="226" height="70" rx="8" class="box"/>
-          <text x="607" y="88" text-anchor="middle" class="t">ClientSession</text>
-          <text x="607" y="108" text-anchor="middle" class="ts">sends inputs, gets state</text>
-          <text x="607" y="124" text-anchor="middle" class="ts">session.js</text>
-          <rect x="494" y="148" width="226" height="86" rx="8" class="box"/>
-          <text x="607" y="174" text-anchor="middle" class="t">Shadow Game</text>
-          <text x="607" y="194" text-anchor="middle" class="ts">a copy for drawing only</text>
-          <text x="607" y="210" text-anchor="middle" class="ts">overwritten by snapshots</text>
-          <rect x="494" y="250" width="226" height="96" rx="8" class="box"/>
-          <text x="607" y="278" text-anchor="middle" class="t">Own player physics</text>
-          <text x="607" y="298" text-anchor="middle" class="ts">moves instantly, no wait</text>
-          <text x="607" y="314" text-anchor="middle" class="ts">physics.js</text>
+          <!-- joiner side -->
+          <rect x="484" y="14" width="260" height="392" rx="12" class="box-a"/>
+          <text x="614" y="38" text-anchor="middle" class="t">Each joiner</text>
+          <rect x="504" y="52" width="220" height="104" rx="8" class="box"/>
+          <text x="614" y="92" text-anchor="middle" class="t">ClientSession</text>
+          <text x="614" y="112" text-anchor="middle" class="ts">sends inputs, gets state</text>
+          <text x="614" y="130" text-anchor="middle" class="ts">session.js</text>
+          <rect x="504" y="196" width="104" height="70" rx="8" class="box"/>
+          <text x="556" y="224" text-anchor="middle" class="t">Shadow</text>
+          <text x="556" y="242" text-anchor="middle" class="t">Game</text>
+          <text x="556" y="259" text-anchor="middle" class="ts">for drawing</text>
+          <rect x="620" y="196" width="104" height="70" rx="8" class="box"/>
+          <text x="672" y="224" text-anchor="middle" class="t">Own</text>
+          <text x="672" y="242" text-anchor="middle" class="t">physics</text>
+          <text x="672" y="259" text-anchor="middle" class="ts">no waiting</text>
+          <path d="M540 158 V192" class="ln" marker-end="url(#c3)"/>
+          <text x="548" y="180" class="ts">snapshots</text>
+          <path d="M690 194 V160" class="ln" marker-end="url(#c3)"/>
+          <text x="698" y="180" class="ts">you</text>
+          <rect x="504" y="300" width="220" height="86" rx="8" class="box"/>
+          <text x="614" y="334" text-anchor="middle" class="t">Voice call</text>
+          <text x="614" y="354" text-anchor="middle" class="ts">your mic out, mix in</text>
+          <text x="614" y="370" text-anchor="middle" class="ts">voice.js</text>
 
-          <path d="M466 96 H322" class="ln-blue" marker-end="url(#c2)"/>
-          <text x="394" y="88" text-anchor="middle" class="tblue">fast: position</text>
-          <path d="M466 126 H322" class="ln-ok" marker-end="url(#c1)"/>
-          <text x="394" y="144" text-anchor="middle" class="tok">safe: place, hit, buy</text>
-          <path d="M322 186 H466" class="ln-blue" marker-end="url(#c2)"/>
-          <text x="394" y="178" text-anchor="middle" class="tblue">fast: snapshot</text>
-          <path d="M322 216 H466" class="ln-ok" marker-end="url(#c1)"/>
-          <text x="394" y="234" text-anchor="middle" class="tok">safe: events, inventory</text>
-          <path d="M322 300 H466" class="ln" stroke-dasharray="2 4"/>
-          <text x="394" y="292" text-anchor="middle" class="ts">voice call</text>
+          <!-- the connection: session to session only -->
+          <path d="M502 74 H260" class="ln-blue" marker-end="url(#c2)"/>
+          <text x="380" y="68" text-anchor="middle" class="tblue">fast: your position</text>
+          <path d="M502 98 H260" class="ln-ok" marker-end="url(#c1)"/>
+          <text x="380" y="92" text-anchor="middle" class="tok">safe: place, hit, buy</text>
+          <path d="M258 122 H500" class="ln-blue" marker-end="url(#c2)"/>
+          <text x="380" y="116" text-anchor="middle" class="tblue">fast: snapshot</text>
+          <path d="M258 146 H500" class="ln-ok" marker-end="url(#c1)"/>
+          <text x="380" y="140" text-anchor="middle" class="tok">safe: events, inventory</text>
+          <path d="M258 343 H502" class="ln" stroke-dasharray="2 4" marker-start="url(#c3)" marker-end="url(#c3)"/>
+          <text x="380" y="336" text-anchor="middle" class="ts">voice (audio call)</text>
+          <text x="380" y="200" text-anchor="middle" class="ts">← joiner to host</text>
+          <text x="380" y="218" text-anchor="middle" class="ts">host to joiner →</text>
         </svg>
       </div>
     </div>
