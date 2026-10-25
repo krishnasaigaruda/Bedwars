@@ -39,6 +39,10 @@ export class Bot {
     this.strafeFor = 0;
     this.digDelay = 0;
     this.t = 0;
+    this.refused = 0;     // ticks spent at an edge where we may not build
+    this.stranded = 0;    // ticks stuck at an edge with no blocks left
+    // Some bots rush with a few blocks, others save up for a sword first.
+    this.rushAt = 12 + Math.floor(rand() * 20);
   }
 
   // Turn toward a yaw gradually, with a little hand shake.
@@ -58,6 +62,7 @@ export class Bot {
     this.breaking = null;
     this.axis = null;
     this.trail = [];
+    this.stranded = 0;
   }
 
   // Knockback from the game (same maths the real client uses).
@@ -99,11 +104,12 @@ export class Bot {
     return best;
   }
 
-  // What a bot buys at the goblin, best things first, keeping enough
-  // silver for blocks.
+  // What a bot buys at the goblin: enough blocks to get somewhere first, then
+  // the best things it can afford, then more blocks.
   shop() {
     const g = this.g, p = this.p;
     const silver = () => p.inv.count('silver'), gold = () => p.inv.count('gold'), dia = () => p.inv.count('diamond');
+    while (silver() >= 4 && this.blockCount() < 32) if (g.buy(p, 'fluff')) break;
     if (dia() >= 4 && !p.inv.count('diamond_sword')) g.buy(p, 'diamond_sword');
     if (gold() >= 18 && p.armorTier < 2) g.buy(p, 'iron_armor');
     if (gold() >= 3 && !p.inv.count('iron_sword') && !p.inv.count('diamond_sword')) g.buy(p, 'iron_sword');
@@ -185,7 +191,7 @@ export class Bot {
       if (Math.hypot(f.x - p.pos.x, f.z - p.pos.z) < 1.2) {
         this.waited++;
         const blocks = this.blockCount();
-        if ((p.inv.count('silver') >= 34 && blocks < 32) || blocks >= 64 || this.waited > 90 * 20) {
+        if ((p.inv.count('silver') >= this.rushAt && blocks < 32) || blocks >= 64 || this.waited > 45 * 20) {
           this.state = 'shop';
           this.waited = 0;
           this.axis = null;
@@ -248,25 +254,33 @@ export class Bot {
       const last = this.trail[this.trail.length - 1];
       if (!last || Math.hypot(last.x - p.pos.x, last.z - p.pos.z) > 1.2) this.trail.push({ x: p.pos.x, z: p.pos.z });
     }
-    if (this.sidestep > 0) mv.strafe = this.sideDir;
+    if (this.sidestep > 0) { mv.strafe = this.sideDir; mv.sneak = true; }   // sneaking: never off an edge
 
-    // Never walk off an edge: place a block there first, or stop.
+    // Never walk off an edge: place a block there first, or stop. A small step
+    // down (ground within 3 blocks) is fine to just walk off.
     if (mv.forward > 0 && b.onGround) {
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
       const cx = Math.floor(p.pos.x + fx * 0.9), cz = Math.floor(p.pos.z + fz * 0.9), cy = Math.floor(p.pos.y + 0.01) - 1;
-      if (!BLOCKS[w.get(cx, cy, cz)].solid) {
+      const ground = [1, 2, 3].some((k) => BLOCKS[w.get(cx, cy - k, cz)].solid);
+      // Out of blocks with nowhere to go for 15s: jump off and respawn, like a
+      // stranded player would.
+      if (!BLOCKS[w.get(cx, cy, cz)].solid && !ground && this.stranded < 15 * 20) {
         bridging = true;
         mv.sprint = false;
         mv.sneak = true;
         mv.strafe = 0;
         const slot = this.blocksLeft();
-        if (slot < 0) { mv.forward = 0; if (!enemy && this.state === 'attack') this.state = 'retreat'; }
+        if (slot < 0) { mv.forward = 0; this.stranded++; if (!enemy && this.state === 'attack') this.state = 'retreat'; }
         else if (this.placeCd <= 0) {
           const id = getItem(p.inv.slots[slot].id).block;
           p.inv.selected = slot;
           const why = g.place(p, cx, cy, cz, slot, id);
           // A normal player sneak-bridges about one block every half second.
-          if (!why) { this.swing++; this.placeCd = 7 + Math.floor(this.rand() * 6) + (this.rand() < 0.1 ? 15 : 0); } else mv.forward = 0;
+          if (!why) { this.swing++; this.refused = 0; this.placeCd = 7 + Math.floor(this.rand() * 6) + (this.rand() < 0.1 ? 15 : 0); } else {
+            // Not allowed to build here (near a generator or a base): go round.
+            mv.forward = 0;
+            if (++this.refused > 20) { this.refused = 0; this.axis = this.axis === 'x' ? 'z' : 'x'; this.sidestep = 25; this.sideDir = this.rand() < 0.5 ? -1 : 1; }
+          }
         } else mv.forward = 0;
       }
     }

@@ -59,7 +59,10 @@ the design changed while we built it.
 
 **Still open:**
 - Host migration (if the host leaves, the game ends).
-- A TURN server option for strict networks.
+- A relay (TURN) server for networks that block direct connections. As of Oct 24 every free public
+  relay is dead (Open Relay, freeturn.net, freestun.net, anyfirewall all give no relay candidates),
+  so two computers that can't connect directly can't play together. Fix: a free metered.ca account,
+  then paste its entries into `TURN` in `src/net/transport.js`.
 - Bots.
 - Mobile controls.
 - Ending at the 40-minute mark: there are no sudden-death dragons.

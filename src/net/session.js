@@ -115,7 +115,7 @@ export class HostSession {
     this.voice?.drop(link.id);
     const p = this.lobby.players.find((x) => x.id === link.id);
     this.lobby.players = this.lobby.players.filter((x) => x.id !== link.id);
-    if (p) this.systemChat(`${p.name} left the game`);
+    if (p) this.systemChat(`${p.name} left the game${link.closeReason ? ` (${link.closeReason})` : ''}`);
     if (this.game) this.game.removePlayer(link.id);
     else this.lobbyChanged();
   }
@@ -485,7 +485,7 @@ export class ClientSession {
       if (m.t === 'start' || m.t === 'round') this.lobby = m.lobby;
       this.onMessage(m);
     });
-    link.onClose(() => this.onMessage({ t: 'closed' }));
+    link.onClose(() => this.onMessage({ t: 'closed', why: link.closeReason }));
   }
 
   // Resolves with the lobby, or rejects with the host's reason.

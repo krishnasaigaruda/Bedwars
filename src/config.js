@@ -2,7 +2,7 @@
 
 export const VERSION = 'bwfun1';
 // Shown on the main menu, so you can tell an old cached copy from the newest one.
-export const BUILD = 'Oct 24 · 16';
+export const BUILD = 'Oct 24 · 18';
 
 export const CHUNK = 16;
 export const WORLD = { X: 256, Y: 128, Z: 256 };

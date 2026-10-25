@@ -165,7 +165,7 @@ img { image-rendering: pixelated; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .join { display: flex; gap: 6px; }
 .join .input.code { text-transform: uppercase; letter-spacing: 3px; text-align: center; padding: 9px 4px; min-width: 0; }
-.menu-note { min-height: 18px; font-size: 14px; color: #fff; text-align: center; font-weight: 800; text-shadow: 0 2px 0 var(--ink); }
+.menu-note { min-height: 18px; font-size: 14px; color: #fff; text-align: center; font-weight: 800; text-shadow: 0 2px 0 var(--ink); white-space: pre-line; }
 .menu-foot { display: flex; gap: 8px; color: #fff; align-items: center; flex-wrap: wrap; justify-content: center; }
 .menu-foot .build { font: 700 11px Rubik, sans-serif; opacity: 0.75; text-shadow: 0 1px 0 var(--ink); }
 .click-monitor {

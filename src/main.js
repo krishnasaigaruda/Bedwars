@@ -645,7 +645,7 @@ function onNet(m) {
       refreshPauseVoice();
       break;
     case 'closed':
-      if (state.screen === 'game') leaveToMenu('Lost connection to the host.');
+      if (state.screen === 'game') leaveToMenu(`Lost connection to the host${m.why ? ` (${m.why})` : ''}.`);
       break;
     default:
   }
@@ -1881,6 +1881,9 @@ hud.pause.addEventListener('click', (e) => {
 });
 hud.more.addEventListener('click', () => { if (state.screen === 'game' && !state.ui) openUI('inventory'); });
 document.addEventListener('pointerdown', unlockAudio, { once: true });
+// Closing or reloading the page: hang up properly, so everyone else sees us
+// leave straight away instead of a frozen player until the connection times out.
+window.addEventListener('pagehide', () => { try { state.session?.leave(); } catch { /* already gone */ } });
 window.addEventListener('beforeunload', (e) => {
   // Ctrl+W while sprinting would otherwise close the tab mid-game.
   if (state.screen === 'game') { e.preventDefault(); e.returnValue = ''; }

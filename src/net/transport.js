@@ -4,17 +4,22 @@ import { Peer } from 'peerjs';
 
 export const PREFIX = 'bwfun1';
 
+// Relay (TURN) servers, for players whose networks block a direct connection
+// (common between two home networks, and with Windows firewalls). The free
+// public relays (Open Relay, freeturn.net, ...) no longer answer, so this
+// needs your own: a free metered.ca account gives one. Paste its entries here:
+//   { urls: 'turn:global.relay.metered.ca:80', username: '...', credential: '...' },
+const TURN = [];
+
 const ICE = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' },
-    // Free public relay (Open Relay Project) for networks that block direct connections.
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    ...TURN,
   ],
 };
+export const HAS_RELAY = TURN.length > 0;
 
 // Opens a peer with the given id (or a random one). Rejects with the PeerJS
 // error type, e.g. 'unavailable-id' when someone already holds that id.
@@ -24,6 +29,12 @@ export function openPeer(id) {
     let done = false;
     const timer = setTimeout(() => { if (!done) { done = true; peer.destroy(); reject(new Error('timeout')); } }, 12000);
     peer.on('open', () => { if (!done) { done = true; clearTimeout(timer); resolve(peer); } });
+    // Stay findable: if the line to the PeerJS server drops (a Wi-Fi blip, a
+    // sleeping laptop, a background tab), reconnect so the room code keeps
+    // working. Games already running don't need it.
+    peer.on('disconnected', () => {
+      setTimeout(() => { if (done && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 2000);
+    });
     peer.on('error', (err) => {
       if (done) return;
       done = true;
@@ -53,9 +64,21 @@ export class Link {
     this.closeHandlers = [];
     this.ping = null;      // round trip in ms, from the browser's connection stats
     this.relay = false;    // true when the traffic goes through the TURN relay
+    this.closeReason = '';  // why the link went down, for the "left the game" message
     conn.on('data', (d) => this.deliver(d));
     conn.on('close', () => this.closed());
-    conn.on('error', () => this.closed());
+    conn.on('error', (err) => { this.closeReason ||= `error: ${err?.type || err?.message || 'unknown'}`; this.closed(); });
+    // A player whose tab crashed or lost the network never says goodbye: the
+    // browser only notices the connection has gone quiet. Treat 8 seconds of
+    // that as gone, instead of keeping a ghost player around for ~30.
+    const pc = conn.peerConnection;
+    pc?.addEventListener('iceconnectionstatechange', () => {
+      const st = pc.iceConnectionState;
+      clearTimeout(this.dropTimer);
+      const drop = () => { this.closeReason ||= 'the network connection dropped'; this.close(); };
+      if (st === 'failed') drop();
+      else if (st === 'disconnected') this.dropTimer = setTimeout(drop, 8000);
+    });
     this.fast = null;
     this.fastOk = false;
     if (conn.open) this.openFast();
@@ -120,6 +143,7 @@ export class Link {
     if (this.isClosed) return;
     this.isClosed = true;
     clearInterval(this.statsTimer);
+    clearTimeout(this.dropTimer);
     for (const h of this.closeHandlers) h();
   }
   onData(h) { this.handlers.push(h); }
@@ -131,17 +155,28 @@ export class Link {
   close() { try { this.conn.close(); } catch { /* already gone */ } this.closed(); }
 }
 
-// Connect to a peer id; resolves with a Link once the channel is open.
-export function connect(peer, id, timeout = 6000) {
+const ROUTE = { host: 'local network', srflx: 'internet address', prflx: 'internet address', relay: 'relay' };
+
+// Connect to a peer id; resolves with a Link once the channel is open. On
+// failure the error carries .info: how far the connection got.
+export function connect(peer, id, timeout = 15000) {
   return new Promise((resolve, reject) => {
     const conn = peer.connect(id, { reliable: true, serialization: 'json' });
+    const pc = conn.peerConnection;
+    const info = { steps: [], mine: new Set(), theirs: new Set(), answered: false };
+    pc?.addEventListener('icecandidate', (e) => { if (e.candidate?.type) info.mine.add(ROUTE[e.candidate.type] ?? e.candidate.type); });
+    pc?.addEventListener('iceconnectionstatechange', () => info.steps.push(pc.iceConnectionState));
     let done = false;
-    const fail = (why) => {
+    const fail = async (why) => {
       if (done) return;
       done = true;
       peer.off('error', onErr);
+      info.answered = !!pc?.remoteDescription;
+      try {
+        (await pc.getStats()).forEach((r) => { if (r.type === 'remote-candidate') info.theirs.add(ROUTE[r.candidateType] ?? r.candidateType); });
+      } catch { /* no stats */ }
       try { conn.close(); } catch { /* ignore */ }
-      reject(new Error(why));
+      reject(Object.assign(new Error(why), { info }));
     };
     const onErr = (err) => { if (err.type === 'peer-unavailable' && String(err.message).includes(id)) fail('unavailable'); };
     peer.on('error', onErr);

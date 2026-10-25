@@ -2,7 +2,7 @@
 // Private rooms: the host takes the peer id "<prefix>-p-<CODE>".
 // Quick Play: hosts take one of a few well-known slot ids per mode; joiners
 // ask every slot for its state and pick the fullest room that's still open.
-import { PREFIX, connect, openPeer } from './transport.js';
+import { HAS_RELAY, PREFIX, connect, openPeer } from './transport.js';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const SLOTS = 8;
@@ -30,13 +30,23 @@ export async function joinPrivate(code) {
     return { peer, link };
   } catch (e) {
     peer.destroy();
-    throw new Error(e.message === 'unavailable' || e.message === 'timeout' ? `No room with code ${code}.` : e.message);
+    if (e.message === 'unavailable') throw new Error(`No room with code ${code}. Check the code, or the host may have left.`);
+    if (e.message === 'timeout') {
+      const i = e.info ?? {};
+      const list = (set) => [...(set ?? [])].join(', ') || 'nothing';
+      throw new Error([
+        `Found room ${code}, but couldn’t connect to the host.`,
+        `Host answered: ${i.answered ? 'yes' : 'no'} · steps: ${i.steps?.join(' → ') || 'none'}`,
+        `This computer offered: ${list(i.mine)} · host offered: ${list(i.theirs)}${HAS_RELAY ? '' : ' · no relay set up'}`,
+      ].join('\n'));
+    }
+    throw new Error(e.message);
   }
 }
 
 // Ask a host for its state: resolves { link, info } or null.
 function probe(peer, id) {
-  return connect(peer, id, 4000).then((link) => new Promise((resolve) => {
+  return connect(peer, id, 8000).then((link) => new Promise((resolve) => {
     const t = setTimeout(() => { link.close(); resolve(null); }, 3000);
     link.onData((m) => {
       if (m.t !== 'info') return;
