@@ -188,6 +188,7 @@ img { image-rendering: pixelated; }
 }
 .btn-key:hover { filter: brightness(1.05); }
 .btn-key.listening { background: var(--gold); }
+.settings-note .note-btn { display: inline-block; margin: 6px 0; padding: 5px 12px; font-size: 14px; -webkit-text-stroke: 3px var(--ink); text-decoration: none; }
 .settings-note { font-size: 13px; font-weight: 700; line-height: 1.4; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.22); text-shadow: 0 1px 0 var(--ink); }
 .controls { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; font-size: 14px; font-weight: 700; text-shadow: 0 1px 0 var(--ink); }
 kbd {
@@ -362,6 +363,25 @@ kbd {
 .pause-voice:empty { display: none; }
 .pause-voice .row { display: flex; gap: 8px; }
 .pause-voice .row .btn { flex: 1; }
+
+/* ------------------------------------------------------------ touchpad check (Windows) */
+
+.touch-card { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+.touch-card .voice-text { font-size: 15px; }
+.touch-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 14px; text-shadow: 0 1px 0 var(--ink); }
+.touch-steps .note-btn { display: inline-block; padding: 5px 12px; font-size: 15px; -webkit-text-stroke: 3px var(--ink); text-decoration: none; }
+.touch-pad {
+  height: 110px; line-height: 104px; text-align: center; border-radius: 12px; cursor: pointer; user-select: none;
+  font: 400 20px 'Lilita One', Rubik, sans-serif; color: var(--ink);
+  background: var(--cream); border: 3px dashed var(--ink);
+}
+.touch-pad.holding { background: #fff3b0; border-style: solid; }
+.touch-pad.ok { background: #b6f59a; border-style: solid; }
+.touch-status { min-height: 20px; text-align: center; font-weight: 800; font-size: 14px; text-shadow: 0 1px 0 var(--ink); }
+.touch-status.warn { color: #ffd23f; }
+.touch-status.good { color: #9dff7a; }
+.touch-or { text-align: center; font: 400 17px 'Lilita One', Rubik, sans-serif; color: var(--gold); -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; margin-top: 4px; }
+.touch-card .voice-small { text-align: center; }
 
 /* ------------------------------------------------------------ voice chat */
 

@@ -44,9 +44,14 @@ the design changed while we built it.
   each player calls the host with their mic and gets back one stream of everyone else. The host
   sends the member list and who's talking; a panel at the bottom right shows it once you've joined.
   No mic, or mic blocked, means listen-only.
-- **Controls:** Place and attack also have keys (F and R by default, set in Settings) for laptop
-  touchpads; Windows ignores touchpad taps while a key is held. Raw mouse input is off by default
-  on Windows because touchpads need the system's pointer acceleration.
+- **Windows touchpads:** Windows ignores touchpad taps while a key is held, so you can't build while
+  moving unless Touchpad sensitivity is "Most sensitive". The game can't read that setting, so on
+  Windows a Touchpad Check (hold W and tap) appears when you join a game, until a tap gets through
+  with a key held. Any click while moving in game also counts. It's remembered, and asked again if a
+  game has 15+ clicks but none while moving. Fallbacks: a button that opens the Windows setting
+  (`ms-settings:devices-touchpad`), Toggle movement (tap W A S D / Shift to start and stop), and
+  place/attack keys (F and R). Raw mouse input is off by default on Windows because touchpads need
+  the system's pointer acceleration.
 - **Dev server:** don't use `python3 -m http.server`; it lets the browser cache old code. Run the
   no-cache script instead, from the project folder:
   `python3 /private/tmp/claude-501/-Users-krishna-Documents-git-Bedwars/0efe6c7f-f990-465f-a579-acd512082ce1/scratchpad/serve.py . 8642`

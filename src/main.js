@@ -10,7 +10,7 @@ import { getItem } from './game/items.js';
 import { BREAK_DELAY, EAT_TICKS, REACH_BLOCK, REACH_ENTITY, SWING_TICKS, TPS, breakTicks, fallDamage } from './game/rules.js';
 import { Game, TIMELINE } from './game/sim.js';
 import { HostSession, ClientSession } from './net/session.js';
-import { IS_WINDOWS, Input, keyName } from './player/controls.js';
+import { IS_WINDOWS, Input } from './player/controls.js';
 import { Body } from './player/physics.js';
 import { DropRenderer } from './render/drops.js';
 import { BlockCursor, Particles } from './render/effects.js';
@@ -24,7 +24,7 @@ import { Renderer } from './render/renderer.js';
 import { HUD, MIC_ICON, MUTED_ICON } from './ui/hud.js';
 import { InventoryUI } from './ui/inventoryui.js';
 import { LobbyUI } from './ui/lobbyui.js';
-import { Menu, loadSettings } from './ui/menus.js';
+import { Menu, loadSettings, saveSettings } from './ui/menus.js';
 import { ShopUI } from './ui/shopui.js';
 import { B, BLOCKS, isLadder } from './world/blocks.js';
 import { MAPS, generateMap } from './world/mapgen.js';
@@ -205,7 +205,8 @@ function resetToLobby() {
   state.screen = 'game';
   state.phase = 'lobby';
   invUI.hide(); shopUI.hide(); lobbyUI.hide();
-  state.ui = hud.voiceAskShown ? 'voice' : null;
+  state.ui = hud.touchCheckShown ? 'touch' : hud.voiceAskShown ? 'voice' : null;
+  reviewTouch();
   state.game = null;
   state.me = null;
   state.lobbyPeers = [];
@@ -238,11 +239,144 @@ function enterGame(session) {
   if (kind === 'private') hud.chat(`<span class="system">Your room code is <b>${state.lobby.code}</b>. Share it! Press <b>E</b> to pick teams, <b>Enter</b> to start.</span>`);
   if (kind === 'public') hud.chat(`<span class="system">Public game: it starts when <b>${session.minPlayers}</b> players are here. <b>E</b> picks a team.</span>`);
   if (kind === 'client') hud.chat('<span class="system">Joined! Press <b>E</b> to pick a team, <b>T</b> to chat.</span>');
-  if (IS_WINDOWS && settings.placeKey) hud.chat(`<span class="system">On a laptop touchpad? Press <b>${keyName(settings.placeKey)}</b> to place blocks${settings.attackKey ? ` and <b>${keyName(settings.attackKey)}</b> to hit` : ''} (change them in Settings).</span>`);
   unlockAudio();
+  if (IS_WINDOWS && !touchOk() && !settings.toggleMove) checkTouchpad(() => startPlaying(session));
+  else startPlaying(session);
+  if (isHost() && kind !== 'offline') stopBackground = startBackgroundTicks();
+}
+
+// Toggle movement (Settings): W A S D, Shift and Ctrl switch on and off
+// instead of being held. Windows blocks touchpad taps while a key is held,
+// so with nothing held you can tap to build while you keep moving.
+const toggles = { KeyW: false, KeyS: false, KeyA: false, KeyD: false, sneak: false, sprint: false };
+const OPPOSITE = { KeyW: 'KeyS', KeyS: 'KeyW', KeyA: 'KeyD', KeyD: 'KeyA' };
+
+function clearToggles() { for (const k in toggles) toggles[k] = false; }
+
+function toggleKey(code) {
+  if (OPPOSITE[code]) {
+    if (code === 'KeyW' && input.doubles.has('KeyW')) { toggles.KeyW = true; toggles.sprint = true; }   // double-tap W: run
+    else {
+      toggles[code] = !toggles[code];
+      if (toggles[code]) toggles[OPPOSITE[code]] = false;
+    }
+    if (!toggles.KeyW) toggles.sprint = false;
+  } else if (code === 'ShiftLeft' || code === 'ShiftRight') toggles.sneak = !toggles.sneak;
+  else if (code === 'ControlLeft' || code === 'ControlRight') toggles.sprint = !toggles.sprint;
+  else return false;
+  const now = [];
+  if (toggles.KeyW) now.push(toggles.sprint ? 'Running' : 'Walking');
+  if (toggles.KeyS) now.push('Walking back');
+  if (toggles.KeyA) now.push('Going left');
+  if (toggles.KeyD) now.push('Going right');
+  if (toggles.sneak) now.push('Sneaking');
+  hud.showAction(now.length ? `${now.join(' · ')} (tap again to stop)` : 'Stopped', 1.5);
+  return true;
+}
+
+function startPlaying(session) {
+  if (state.session !== session || state.screen !== 'game') return;
   if (session.voice) askVoice();
   else input.lock();
-  if (isHost() && kind !== 'offline') stopBackground = startBackgroundTicks();
+}
+
+// ------------------------------------------------------------- Windows touchpads
+
+// Windows throws away touchpad taps while a key is held (so you can't build
+// while moving) unless Touchpad sensitivity is "Most sensitive". The game
+// can't read that setting, so it checks what actually gets through: a click
+// while a key is held proves it's on. Once proven it's remembered; if a whole
+// game later has plenty of clicks but none while moving, it asks again.
+const TOUCH_OK = 'blockwars-touchpad-ok';
+const touchStats = { clicks: 0, moving: 0 };
+
+function touchOk() {
+  try { return localStorage.getItem(TOUCH_OK) === '1'; } catch { return true; }
+}
+function setTouchOk(ok) {
+  try { if (ok) localStorage.setItem(TOUCH_OK, '1'); else localStorage.removeItem(TOUCH_OK); } catch { /* storage blocked */ }
+}
+
+canvas.addEventListener('mousedown', () => {
+  if (!IS_WINDOWS || !input.locked || state.ui) return;
+  touchStats.clicks++;
+  if (input.keys.size) { touchStats.moving++; setTouchOk(true); }
+});
+
+// After a game: lots of clicks, never one while moving, means taps are blocked again.
+function reviewTouch() {
+  if (IS_WINDOWS && !settings.toggleMove && touchStats.clicks >= 15 && touchStats.moving === 0) setTouchOk(false);
+  touchStats.clicks = touchStats.moving = 0;
+}
+
+let stopTouchCheck = null;
+function checkTouchpad(done) {
+  state.ui = 'touch';
+  input.unlock();
+  hud.setTouchCheck(true);
+  const card = hud.touchCheck;
+  const pad = card.querySelector('[data-pad]');
+  const status = card.querySelector('[data-status]');
+  const say = (html, cls = '') => { status.innerHTML = html; status.className = `touch-status ${cls}`; };
+  const idle = () => { pad.className = 'touch-pad'; pad.innerHTML = 'Hold <b>W</b> and tap here'; };
+  const held = new Map();   // key -> when it went down
+  let passed = false;
+  idle();
+  say('Already set up, or using a mouse? Just hold W and tap.');
+
+  const keyDown = (e) => {
+    if (passed || e.code === 'Escape' || e.code === 'Tab' || held.has(e.code)) return;
+    held.set(e.code, performance.now());
+    pad.className = 'touch-pad holding';
+    pad.innerHTML = 'Now <b>tap</b>!';
+  };
+  const keyUp = (e) => { held.delete(e.code); if (!held.size && !passed) idle(); };
+  const blur = () => { held.clear(); if (!passed) idle(); };
+  const tap = (e) => {
+    e.preventDefault();
+    if (passed) return;
+    if (!held.size) { say('Keep holding <b>W</b> while you tap.', 'warn'); return; }
+    passed = true;
+    setTouchOk(true);
+    pad.className = 'touch-pad ok';
+    pad.innerHTML = '✔ It works!';
+    say('Taps get through while you move. Have fun!', 'good');
+    play('ding');
+    setTimeout(() => { stop(); done(); }, 900);
+  };
+  // Holding a key with nothing getting through: Windows is still eating the taps.
+  const timer = setInterval(() => {
+    const since = Math.max(0, ...[...held.values()].map((t) => performance.now() - t));
+    if (!passed && since > 3000) say('Tapping but nothing happens? Windows is still blocking taps: change the setting above, then try again.', 'warn');
+  }, 250);
+  const onClick = (e) => {
+    if (e.target.closest('[data-leave]')) leaveToMenu();
+    if (e.target.closest('[data-toggle]')) {
+      settings.toggleMove = true;
+      saveSettings(settings);
+      play('click');
+      hud.chat('<span class="system">Toggle movement is on: tap <b>W</b> to start walking and tap it again to stop (same for A, S, D and Shift). Turn it off in Settings.</span>');
+      stop();
+      done();
+    }
+  };
+  window.addEventListener('keydown', keyDown);
+  window.addEventListener('keyup', keyUp);
+  window.addEventListener('blur', blur);
+  pad.addEventListener('mousedown', tap);
+  card.addEventListener('click', onClick);
+  const stop = () => {
+    window.removeEventListener('keydown', keyDown);
+    window.removeEventListener('keyup', keyUp);
+    window.removeEventListener('blur', blur);
+    pad.removeEventListener('mousedown', tap);
+    card.removeEventListener('click', onClick);
+    clearInterval(timer);
+    hud.setTouchCheck(false);
+    if (state.ui === 'touch') state.ui = null;
+    stopTouchCheck = null;
+  };
+  stopTouchCheck = stop;
 }
 
 // ------------------------------------------------------------- voice chat
@@ -378,6 +512,8 @@ function leaveToMenu(note) {
   hud.setVoiceAsk(false);
   hud.setVoice(null);
   state.voiceInfo = null;
+  stopTouchCheck?.();
+  reviewTouch();
   hud.setDeath(null);
   hud.setBanner(null);
   hud.setEnd(null);
@@ -872,13 +1008,15 @@ function tick() {
 
   // Movement.
   if (!me || me.alive || me.eliminated) {
-    const k = (c) => controls && input.keys.has(c);
+    if (!controls || !alive) clearToggles();
+    const tg = controls && settings.toggleMove;
+    const k = (c) => controls && (input.keys.has(c) || (tg && !!toggles[c]));
     const mv = {
       forward: (k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0),
       strafe: (k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0),
       jump: k('Space'),
-      sneak: k('ShiftLeft') || k('ShiftRight'),
-      sprint: k('ControlLeft') || k('ControlRight'),
+      sneak: k('ShiftLeft') || k('ShiftRight') || (tg && toggles.sneak),
+      sprint: k('ControlLeft') || k('ControlRight') || (tg && toggles.sprint),
       sprintTap: local.sprintTap,
       yaw: local.yaw,
       canSprint: !me || me.food > 6,
@@ -886,7 +1024,7 @@ function tick() {
     if (local.eating >= 0 || local.bow >= 0) { mv.forward *= 0.2; mv.strafe *= 0.2; mv.sprint = false; mv.sprintTap = false; }
     const speedMul = (1 + 0.2 * effectLevel('speed')) * (1 - 0.15 * effectLevel('slow'));
     b.tick(w, mv, speedMul, effectLevel('jump'));
-    if (!b.sprinting || !(controls && input.keys.has('KeyW'))) local.sprintTap = false;
+    if (!b.sprinting || !k('KeyW')) local.sprintTap = false;
 
     if (me && playing && alive) {
       if (b.sprinting && b.onGround) local.exh += 0.1 * b.walked;
@@ -1567,6 +1705,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (state.ui === 'pause' || !input.locked) return;
+  if (settings.toggleMove && toggleKey(e.code)) return;
   const m = /^Digit([1-9])$/.exec(e.code);
   if (m) selectSlot(Number(m[1]) - 1);
   else if (e.code === 'KeyE') interact();
@@ -1666,4 +1805,4 @@ loadMap(settings.map !== 'random' && MAPS.some((m) => m.id === settings.map) ? s
 requestAnimationFrame(frame);
 
 // Handy for poking at the game from the browser console.
-window.blockwars = { state, local, renderer, input, openUI, FP, firstPerson };
+window.blockwars = { state, local, renderer, input, openUI, FP, firstPerson, settings, checkTouchpad, toggles };

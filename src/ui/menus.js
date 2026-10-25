@@ -11,7 +11,7 @@ const SETTINGS_KEY = 'blockwars-settings';
 const DEFAULTS = {
   name: '', mode: 'solo', map: 'random',
   sensitivity: 1, fov: 70, volume: 0.6, music: 0.5, bobbing: true, bridgeAssist: true,
-  placeKey: 'KeyF', attackKey: 'KeyR', rawInput: !IS_WINDOWS, voiceVolume: 1,
+  placeKey: 'KeyF', attackKey: 'KeyR', rawInput: !IS_WINDOWS, voiceVolume: 1, toggleMove: false,
 };
 
 // Keys the game already uses; the place/attack keys can't take these.
@@ -178,9 +178,12 @@ export class Menu {
       ${toggle('bob', 'View bobbing', s.bobbing)}
       ${toggle('assist', 'Bridge assist (outline + place at the edge when aiming past it)', s.bridgeAssist)}
       ${toggle('raw', 'Raw mouse input (best with a mouse, turn off for a laptop touchpad)', s.rawInput)}
+      ${toggle('togglemove', 'Toggle movement: tap W A S D or Shift to start and stop moving, no holding (lets a Windows touchpad tap while you move)', s.toggleMove)}
       <div class="bind-row"><span>Place / use key <small>(as well as right click)</small></span><button class="btn-key" data-bind="placeKey">${keyName(s.placeKey)}</button></div>
       <div class="bind-row"><span>Attack / break key <small>(as well as left click)</small></span><button class="btn-key" data-bind="attackKey">${keyName(s.attackKey)}</button></div>
-      ${IS_WINDOWS ? `<div class="settings-note">Laptop touchpad on Windows? Windows ignores taps while you hold a key (like S or Shift when bridging), so ${s.placeKey ? `use the <b>${keyName(s.placeKey)}</b> key to place` : 'set a Place key above'}. Or open Windows Settings → Bluetooth &amp; devices → Touchpad → Taps and set <b>Touchpad sensitivity</b> to <b>Most sensitive</b>.</div>` : ''}`, (m) => {
+      ${IS_WINDOWS ? `<div class="settings-note"><b>Touchpad taps not working while you move?</b> Windows throws away touchpad taps while you hold a key (W, S, Shift…), before the game ever gets them. Macs don't do this. One Windows setting turns it off:
+        <a class="btn btn-wood note-btn" href="ms-settings:devices-touchpad">Open touchpad settings</a>
+        then under <b>Taps</b> set <b>Touchpad sensitivity</b> to <b>Most sensitive</b>. Pressing the touchpad down until it clicks (instead of tapping) also works while moving.</div>` : ''}`, (m) => {
       const bind = (id, key, fmt) => m.querySelector(`#${id}`).addEventListener('input', (e) => {
         s[key] = Number(e.target.value);
         m.querySelector(`#v-${id}`).textContent = fmt(s[key]);
@@ -200,6 +203,7 @@ export class Menu {
       check('bob', 'bobbing');
       check('assist', 'bridgeAssist');
       check('raw', 'rawInput');
+      check('togglemove', 'toggleMove');
 
       // Click a key button, then press the key you want (Esc cancels,
       // Backspace clears it).

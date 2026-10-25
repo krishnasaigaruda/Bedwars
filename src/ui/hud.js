@@ -89,6 +89,21 @@ export class HUD {
       <button class="btn btn-wood" data-act="settings">Settings</button>
       <button class="btn btn-red" data-act="menu">Leave Game</button></div>`;
     this.pauseVoice = this.pause.querySelector('.pause-voice');
+    // Windows only: proves touchpad taps get through while a key is held.
+    this.touchCheck = el('div', 'pause hidden', root, `<div class="panel touch-card">
+      <div class="panel-title">Touchpad Check</div>
+      <div class="voice-text">Windows ignores touchpad taps while you hold a key, so you couldn’t build while moving. Turn that off once:</div>
+      <ol class="touch-steps">
+        <li><a class="btn btn-wood note-btn" href="ms-settings:devices-touchpad">Open touchpad settings</a></li>
+        <li>Under <b>Taps</b>, set <b>Touchpad sensitivity</b> to <b>Most sensitive</b>.</li>
+        <li>Come back, <b>hold W</b> and <b>tap the box</b>.</li>
+      </ol>
+      <div class="touch-pad" data-pad>Hold <b>W</b> and tap here</div>
+      <div class="touch-status" data-status>Already set up, or using a mouse? Just hold W and tap.</div>
+      <div class="touch-or">Can’t change the setting?</div>
+      <button class="btn btn-wood" data-toggle>Use toggle movement</button>
+      <div class="voice-small">Tap W to start walking and tap it again to stop (same for A, S, D and Shift), so no key is held down and Windows lets your taps through.</div>
+      <button class="btn btn-red" data-leave>Leave</button></div>`);
     this.voice = el('div', 'voice-panel hidden', root);
     this.voiceAsk = el('div', 'pause hidden', root, `<div class="panel voice-card">
       <div class="voice-big">${MIC_ICON}</div>
@@ -269,6 +284,8 @@ export class HUD {
     this.voice.classList.toggle('hidden', html == null);
     if (html != null && html !== this.voiceHtml) { this.voiceHtml = html; this.voice.innerHTML = html; }
   }
+  setTouchCheck(on) { this.touchCheck.classList.toggle('hidden', !on); }
+  get touchCheckShown() { return !this.touchCheck.classList.contains('hidden'); }
   setVoiceAsk(on) { this.voiceAsk.classList.toggle('hidden', !on); }
   get voiceAskShown() { return !this.voiceAsk.classList.contains('hidden'); }
 
