@@ -291,6 +291,8 @@ kbd {
 .feed-msg.out { opacity: 0; }
 @keyframes slide-in { from { transform: translateX(-20px); opacity: 0; } }
 
+.start-btn { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 8px 18px; }
+.start-btn kbd { font-size: 12px; }
 .banner {
   position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
   font: 400 clamp(20px, 3vw, 32px) 'Lilita One', Rubik, sans-serif; color: #fff; white-space: nowrap;

@@ -86,10 +86,14 @@ export class HUD {
     this.pause = el('div', 'pause hidden', root);
     this.pause.innerHTML = `<div class="panel pause-card"><div class="panel-title">Paused</div>
       <button class="btn btn-green" data-act="resume">Back to Game</button>
+      <button class="btn btn-yellow" data-act="start" hidden>Start Game Now</button>
       <div class="pause-voice"></div>
       <button class="btn btn-wood" data-act="settings">Settings</button>
       <button class="btn btn-red" data-act="menu">Leave Game</button></div>`;
     this.pauseVoice = this.pause.querySelector('.pause-voice');
+    this.pauseStart = this.pause.querySelector('[data-act="start"]');
+    // Host only: a start button under the lobby banner.
+    this.startBtn = el('button', 'btn btn-green start-btn hidden', root, 'START NOW <kbd>Enter</kbd>');
     // Windows only: proves touchpad taps get through while a key is held.
     this.touchCheck = el('div', 'pause hidden', root, `<div class="panel touch-card">
       <div class="panel-title">Touchpad Check</div>
@@ -210,6 +214,8 @@ export class HUD {
     while (this.feed.children.length > 6) this.feed.firstChild.remove();
     setTimeout(() => { m.classList.add('out'); setTimeout(() => m.remove(), 400); }, seconds * 1000);
   }
+
+  setStart(on) { this.startBtn.classList.toggle('hidden', !on); }
 
   setBanner(html) {
     if (html == null) { this.banner.classList.add('hidden'); this.bannerHtml = null; return; }

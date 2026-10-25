@@ -9,7 +9,13 @@ export const PREFIX = 'bwfun1';
 // public relays (Open Relay, freeturn.net, ...) no longer answer, so this
 // needs your own: a free metered.ca account gives one. Paste its entries here:
 //   { urls: 'turn:global.relay.metered.ca:80', username: '...', credential: '...' },
-const TURN = [];
+// The old free Open Relay is listed too. As of Oct 2026 its address no longer
+// answers, so it does nothing unless Metered brings it back.
+const TURN = [
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+];
 
 const ICE = {
   iceServers: [

@@ -241,8 +241,8 @@ function enterGame(session) {
   document.getElementById('hud').classList.remove('hidden');
   const kind = session.kind;
   if (kind === 'offline') hud.chat(`<span class="system">${session.withBots ? 'Practice vs Bots: every other team is bots. ' : 'Solo practice. '}Press <b>Enter</b> to start now.</span>`);
-  if (kind === 'private') hud.chat(`<span class="system">Your room code is <b>${state.lobby.code}</b>. Share it! Press <b>E</b> to pick teams, <b>Enter</b> to start.</span>`);
-  if (kind === 'public') hud.chat(`<span class="system">Public game: it starts when <b>${session.minPlayers}</b> players are here. <b>E</b> picks a team.</span>`);
+  if (kind === 'private') hud.chat(`<span class="system">Your room code is <b>${state.lobby.code}</b>. Share it! Once a friend joins, the game starts by itself in 2 minutes, or press <b>Enter</b> to start now.</span>`);
+  if (kind === 'public') hud.chat(`<span class="system">Public game: a 30 second countdown starts once <b>${session.minPlayers}</b> players are here. <b>E</b> picks a team.</span>`);
   if (kind === 'client') hud.chat('<span class="system">Joined! Press <b>E</b> to pick a team, <b>T</b> to chat.</span>');
   unlockAudio();
   if (IS_WINDOWS && !touchOk() && !settings.toggleMove) checkTouchpad(() => startPlaying(session));
@@ -741,7 +741,15 @@ function buyResult(why) {
   return why;
 }
 
-const canStart = () => isHost() && state.session.kind !== 'public' && state.phase === 'lobby';
+// Who may start early: anyone in practice, the host of a private room once a
+// second player is in. Public games have no host controls; they count down
+// by themselves.
+function canStart() {
+  if (!isHost() || state.phase !== 'lobby' || !state.lobby || state.lobby.forced) return false;
+  const kind = state.session.kind;
+  if (kind === 'offline') return true;
+  return kind === 'private' && state.lobby.players.length >= 2;
+}
 
 function openUI(kind) {
   if ((kind === 'shop' || kind === 'upgrades') && !state.me) { hud.showAction('The shop opens when the game starts!'); return; }
@@ -773,6 +781,7 @@ function showPause() {
   if (state.screen !== 'game') return;
   state.ui = 'pause';
   refreshPauseVoice();
+  hud.pauseStart.hidden = !canStart();
   hud.setPaused(true);
 }
 
@@ -1483,7 +1492,8 @@ function updateGame(dt) {
   if (state.phase === 'lobby' && state.lobby) {
     const L = state.lobby;
     const mode = MODES[L.mode] ?? MODES.solo;
-    if (L.state === 'countdown') hud.setBanner(`TIME TO START THE GAME <em>${Math.max(0, Math.ceil(L.countdown))}s</em>`);
+    const secs = Math.max(0, Math.ceil(L.countdown));
+    if (L.state === 'countdown') hud.setBanner(`STARTS IN <em>${secs >= 60 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : `${secs}s`}</em>${L.code ? ` · ROOM <em>${L.code}</em>` : ''}`);
     else {
       const need = L.min > 1 && L.players.length < L.min ? ` · NEED <em>${L.min}</em> TO START` : '';
       hud.setBanner(`WAITING FOR PLAYERS <em>${L.players.length}/${mode.teams * mode.size}</em>${need}${L.code ? ` · ROOM <em>${L.code}</em>` : ''}`);
@@ -1604,6 +1614,7 @@ function updateGame(dt) {
   }
   hud.setTab(input.keys.has('Tab') && !state.ui ? tabList() : null);
   hud.setVoice(state.session?.voice?.joined ? voicePanel() : null);
+  hud.setStart(canStart() && !state.ui);
   hud.setClicks(settings.clickMonitor ? clickMonitor() : null);
   hud.setTopbar(state.game ? topbar() : null);
   invUI.update();
@@ -1865,11 +1876,19 @@ input.onLockChange = (locked) => {
     hud.setResume(false);
   } else if (!state.ui && state.phase !== 'ended' && !hud.resumeShown) showPause();
 };
+hud.startBtn.addEventListener('click', () => {
+  if (!canStart()) return;
+  play('click');
+  state.session.requestStart();
+  unlockAudio();
+  input.lock();
+});
 hud.pause.addEventListener('click', (e) => {
   const act2 = e.target.closest('[data-act]')?.dataset.act;
   if (act2 === 'menu') leaveToMenu();
   else if (act2 === 'settings') menu.openSettings();
   else if (act2 === 'resume') { unlockAudio(); input.lock(); }
+  else if (act2 === 'start') { state.session.requestStart(); unlockAudio(); input.lock(); }
   else if (act2 === 'voice-join') { play('click'); joinVoice(); }
   else if (act2 === 'voice-leave') { play('click'); leaveVoice(); }
   else if (act2 === 'voice-mute') {

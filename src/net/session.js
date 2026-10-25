@@ -106,6 +106,8 @@ export class HostSession {
     this.lobby.players.push({ id: link.id, name, team: -1, look: cleanLook(m.look) });
     link.send({ t: 'welcome', id: link.id, lobby: this.lobby });
     this.systemChat(`${name} joined the game (${this.lobby.players.length}/${this.maxPlayers})`);
+    // Someone new gets time to get ready (unless the host already said go).
+    if (this.lobby.state === 'countdown' && !this.lobby.forced && this.kind !== 'offline') this.lobby.countdown = this.autoStart;
     this.lobbyChanged();
   }
 
@@ -129,13 +131,18 @@ export class HostSession {
     this.lobbyChanged();
   }
 
+  // One rule for online games: once there are enough players a countdown
+  // starts by itself (2 min private, 30s public), the host can skip to the
+  // last 5s, a new player puts it back up, and a full room starts in 10s.
+  get needed() { return this.kind === 'public' ? this.minPlayers : this.kind === 'private' ? 2 : 1; }
+  get autoStart() { return this.kind === 'private' ? 120 : 30; }
+
   lobbyChanged() {
-    // Public rooms count down by themselves once there are enough players.
-    this.lobby.min = this.kind === 'public' ? this.minPlayers : 1;
-    if (this.kind === 'public' && this.lobby.state !== 'playing') {
+    this.lobby.min = this.needed;
+    if (this.kind !== 'offline' && this.lobby.state !== 'playing') {
       const n = this.lobby.players.length;
-      if (n >= this.minPlayers && this.lobby.state === 'waiting') this.startCountdown(20);
-      else if (n < this.minPlayers && this.lobby.state === 'countdown') this.lobby.state = 'waiting';
+      if (n >= this.needed && this.lobby.state === 'waiting') this.startCountdown(this.autoStart);
+      else if (n < this.needed && this.lobby.state === 'countdown') { this.lobby.state = 'waiting'; this.lobby.forced = false; }
       if (n >= this.maxPlayers && this.lobby.countdown > 10) this.lobby.countdown = 10;
     }
     this.broadcast({ t: 'lobby', lobby: this.lobby });
@@ -152,7 +159,8 @@ export class HostSession {
   // Host pressed start (private rooms and practice).
   requestStart() {
     if (this.lobby.state === 'playing') return;
-    if (this.lobby.state === 'countdown') this.lobby.countdown = Math.min(this.lobby.countdown, 1);
+    this.lobby.forced = true;
+    if (this.lobby.state === 'countdown') { this.lobby.countdown = Math.min(this.lobby.countdown, this.kind === 'offline' ? 0.01 : 5); this.lobbyChanged(); }
     else this.startCountdown(this.kind === 'offline' ? 0.01 : 5);
   }
 
@@ -180,6 +188,7 @@ export class HostSession {
     this.wander.clear();
     this.lobby.state = 'waiting';
     this.lobby.countdown = 0;
+    this.lobby.forced = false;
     this.lobby.mapId = mapId;
     this.lobby.round = (this.lobby.round ?? 1) + 1;
     if (this.kind === 'public') for (const p of this.lobby.players) p.team = -1;
