@@ -231,11 +231,14 @@ export class Game {
 
   // ------------------------------------------------------------ blocks
 
-  cellBlockedByPlayer(x, y, z) {
+  // self/at: where the placing player says they are right now. A client's
+  // position reaches the host a little late, so a player running over the
+  // spot they place on would otherwise still seem to be standing in it.
+  cellBlockedByPlayer(x, y, z, self = null, at = null) {
     const hw = PHYS.width / 2;
     for (const p of this.players.values()) {
       if (!p.alive) continue;
-      const q = p.pos;
+      const q = p === self && at ? at : p.pos;
       if (q.x - hw < x + 1 && q.x + hw > x && q.y < y + 1 && q.y + PHYS.height > y && q.z - hw < z + 1 && q.z + hw > z) return true;
     }
     return false;
@@ -249,23 +252,23 @@ export class Game {
   }
 
   // Returns null on success or a reason string.
-  canPlace(p, x, y, z, blockId) {
+  canPlace(p, x, y, z, blockId, at = null) {
     const w = this.world;
     if (!p.alive) return 'dead';
     if (!w.inBounds(x, y, z) || w.get(x, y, z) !== B.AIR) return 'occupied';
     if (y > BUILD_LIMIT) return 'Build height limit reached!';
     if (this.inNoBuild(x, y, z)) return 'You can’t place blocks here!';
-    if (BLOCKS[blockId].solid && this.cellBlockedByPlayer(x, y, z)) return 'occupied';
+    if (BLOCKS[blockId].solid && this.cellBlockedByPlayer(x, y, z, p, at)) return 'occupied';
     return null;
   }
 
-  place(p, x, y, z, slot, blockId) {
+  place(p, x, y, z, slot, blockId, at = null) {
     const s = p.inv.slots[slot];
     const item = getItem(s?.id);
     if (!item || item.kind !== 'block') return 'no block';
     const base = isLadder(item.block) ? B.LADDER : item.block;
     if ((isLadder(blockId) ? B.LADDER : blockId) !== base) return 'wrong block';
-    const why = this.canPlace(p, x, y, z, blockId);
+    const why = this.canPlace(p, x, y, z, blockId, at);
     if (why) return why;
     p.inv.removeAt(slot, 1);
     if (blockId === B.TNT) {

@@ -883,7 +883,9 @@ function tryPlace() {
     // Guess it works; the host corrects us if not.
     if (g.id !== B.TNT) state.world.set(g.x, g.y, g.z, g.id, true);
     inv.removeAt(inv.selected, 1);
-    act('place', { x: g.x, y: g.y, z: g.z, slot: inv.selected, id: g.id });
+    // Send where we are right now, so the host doesn't think we're still standing there.
+    const b = local.body;
+    act('place', { x: g.x, y: g.y, z: g.z, slot: inv.selected, id: g.id, at: [+b.pos.x.toFixed(3), +b.pos.y.toFixed(3), +b.pos.z.toFixed(3)] });
   }
   play('place');
   swing();

@@ -359,7 +359,7 @@ export class HostSession {
     if (!p) return 'not playing';
     let why = null;
     switch (m.a) {
-      case 'place': why = g.place(p, m.x, m.y, m.z, m.slot, m.id); break;
+      case 'place': why = g.place(p, m.x, m.y, m.z, m.slot, m.id, this.claimedPos(p, m.at)); break;
       case 'break': why = g.breakBlock(p, m.x, m.y, m.z); break;
       case 'buy': why = g.buy(p, m.key); break;
       case 'upg': why = g.buyUpgrade(p, m.key); break;
@@ -382,6 +382,14 @@ export class HostSession {
       this.lastMe.delete(id);
     }
     return why;
+  }
+
+  // A client's own position sent with an action (newer than the host's copy).
+  // Only trusted if it's close to where the host thinks they are.
+  claimedPos(p, at) {
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
+    const [x, y, z] = at;
+    return Math.hypot(x - p.pos.x, y - p.pos.y, z - p.pos.z) <= 4 ? { x, y, z } : null;
   }
 
   // Hunger and fall damage from a client's own movement. These come on the
