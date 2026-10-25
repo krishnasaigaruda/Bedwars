@@ -46,6 +46,7 @@ export class HUD {
     this.titleSub = el('div', 'title-sub', this.title);
     this.action = el('div', 'actionbar', root);
     this.itemName = el('div', 'item-name', root);
+    this.tip = el('div', 'tip', root);
     this.debug = el('div', 'debug hidden', root);
     this.effects = el('div', 'effects', root);
     this.keys = el('div', 'keyhints', root, `
@@ -105,6 +106,7 @@ export class HUD {
       <div class="voice-small">Tap W to start walking and tap it again to stop (same for A, S, D and Shift), so no key is held down and Windows lets your taps through.</div>
       <button class="btn btn-red" data-leave>Leave</button></div>`);
     this.voice = el('div', 'voice-panel hidden', root);
+    this.clicks = el('div', 'click-monitor hidden', root);
     this.voiceAsk = el('div', 'pause hidden', root, `<div class="panel voice-card">
       <div class="voice-big">${MIC_ICON}</div>
       <div class="panel-title">Voice Chat</div>
@@ -112,7 +114,7 @@ export class HUD {
       <div class="voice-buttons"><button class="btn btn-green" data-voice="yes">Yes</button><button class="btn btn-red" data-voice="no">No</button></div>
       <div class="voice-small">You can join or leave any time from the <b>Esc</b> menu.</div></div>`);
 
-    this.timers = { title: 0, action: 0, item: 0 };
+    this.timers = { title: 0, action: 0, item: 0, tip: 0 };
     this.invVersion = -1;
     this.hp = null;
   }
@@ -187,6 +189,13 @@ export class HUD {
     this.titleSub.textContent = sub;
     this.title.classList.add('show');
     this.timers.title = seconds;
+  }
+
+  // A bigger hint card under the top bar (e.g. how to place blocks).
+  showTip(html, seconds = 10) {
+    this.tip.innerHTML = html;
+    this.tip.classList.add('show');
+    this.timers.tip = seconds;
   }
 
   showAction(text, seconds = 2) {
@@ -284,6 +293,10 @@ export class HUD {
     this.voice.classList.toggle('hidden', html == null);
     if (html != null && html !== this.voiceHtml) { this.voiceHtml = html; this.voice.innerHTML = html; }
   }
+  setClicks(html) {
+    this.clicks.classList.toggle('hidden', html == null);
+    if (html != null && html !== this.clicksHtml) { this.clicksHtml = html; this.clicks.innerHTML = html; }
+  }
   setTouchCheck(on) { this.touchCheck.classList.toggle('hidden', !on); }
   get touchCheckShown() { return !this.touchCheck.classList.contains('hidden'); }
   setVoiceAsk(on) { this.voiceAsk.classList.toggle('hidden', !on); }
@@ -301,10 +314,10 @@ export class HUD {
   setVisible(v) { this.root.classList.toggle('hud-off', !v); }
 
   update(dt) {
-    for (const k of ['title', 'action', 'item']) {
+    for (const k of ['title', 'action', 'item', 'tip']) {
       if (this.timers[k] <= 0) continue;
       this.timers[k] -= dt;
-      if (this.timers[k] <= 0) ({ title: this.title, action: this.action, item: this.itemName })[k].classList.remove('show');
+      if (this.timers[k] <= 0) ({ title: this.title, action: this.action, item: this.itemName, tip: this.tip })[k].classList.remove('show');
     }
   }
 }

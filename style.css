@@ -166,7 +166,15 @@ img { image-rendering: pixelated; }
 .join { display: flex; gap: 6px; }
 .join .input.code { text-transform: uppercase; letter-spacing: 3px; text-align: center; padding: 9px 4px; min-width: 0; }
 .menu-note { min-height: 18px; font-size: 14px; color: #fff; text-align: center; font-weight: 800; text-shadow: 0 2px 0 var(--ink); }
-.menu-foot { display: flex; gap: 8px; color: #fff; }
+.menu-foot { display: flex; gap: 8px; color: #fff; align-items: center; flex-wrap: wrap; justify-content: center; }
+.menu-foot .build { font: 700 11px Rubik, sans-serif; opacity: 0.75; text-shadow: 0 1px 0 var(--ink); }
+.click-monitor {
+  position: absolute; left: 12px; top: 96px; max-width: 420px; padding: 8px 10px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.68); font: 600 12px ui-monospace, monospace; line-height: 1.5; white-space: pre-wrap;
+}
+.click-monitor b { color: #ffd23f; }
+.click-monitor .ok { color: #7dff6b; }
+.click-monitor .no { color: #ff8a80; }
 .link {
   font: 400 16px 'Lilita One', Rubik, sans-serif; color: #fff; background: none; border: none; cursor: pointer;
   -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill;
@@ -337,6 +345,16 @@ kbd {
   opacity: 0; transition: opacity 0.2s; white-space: nowrap;
 }
 .actionbar.show { opacity: 1; }
+.tip {
+  position: absolute; left: 50%; top: 78px; transform: translateX(-50%); max-width: calc(100vw - 32px);
+  display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-radius: 12px;
+  background: linear-gradient(180deg, var(--wood-hi) 0%, var(--wood) 30%, #98572a 100%); border: 3px solid var(--wood-edge);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.35); font-weight: 800; font-size: 15px; color: #fff; text-shadow: 0 2px 0 var(--ink);
+  opacity: 0; transition: opacity 0.3s; pointer-events: none; text-align: center;
+}
+.tip.show { opacity: 1; }
+.tip b { color: var(--gold); }
+.tip img { width: 28px; height: 28px; image-rendering: pixelated; }
 .item-name {
   position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%);
   font: 400 17px 'Lilita One', Rubik, sans-serif; -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill;

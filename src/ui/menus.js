@@ -1,6 +1,6 @@
 // Main menu: name, mode, map, play buttons and settings. The map orbits behind it.
 import * as THREE from 'three';
-import { MODES, TEAMS } from '../config.js';
+import { BUILD, MODES, TEAMS } from '../config.js';
 import { LOOK_OPTIONS, PlayerModel, resolveLook } from '../render/models.js';
 import { play } from '../audio.js';
 import { MAPS } from '../world/mapgen.js';
@@ -11,7 +11,7 @@ const SETTINGS_KEY = 'blockwars-settings';
 const DEFAULTS = {
   name: '', mode: 'solo', map: 'random',
   sensitivity: 1, fov: 70, volume: 0.6, music: 0.5, bobbing: true, bridgeAssist: true,
-  placeKey: 'KeyF', attackKey: 'KeyR', rawInput: !IS_WINDOWS, voiceVolume: 1, toggleMove: false,
+  placeKey: 'KeyF', attackKey: 'KeyR', rawInput: !IS_WINDOWS, voiceVolume: 1, toggleMove: false, clickMonitor: false,
 };
 
 // Keys the game already uses; the place/attack keys can't take these.
@@ -98,6 +98,7 @@ export class Menu {
           <button class="link" data-act="settings">Settings</button>
           <span>·</span>
           <button class="link" data-act="controls">Controls</button>
+          <span class="build">build ${BUILD}</span>
         </div>
       </div>`;
 
@@ -178,6 +179,7 @@ export class Menu {
       ${toggle('bob', 'View bobbing', s.bobbing)}
       ${toggle('assist', 'Bridge assist (outline + place at the edge when aiming past it)', s.bridgeAssist)}
       ${toggle('raw', 'Raw mouse input (best with a mouse, turn off for a laptop touchpad)', s.rawInput)}
+      ${toggle('clicks', 'Show my clicks on screen (to check a touchpad: every click the game gets, and what it did)', s.clickMonitor)}
       ${toggle('togglemove', 'Toggle movement: tap W A S D or Shift to start and stop moving, no holding (lets a Windows touchpad tap while you move)', s.toggleMove)}
       <div class="bind-row"><span>Place / use key <small>(as well as right click)</small></span><button class="btn-key" data-bind="placeKey">${keyName(s.placeKey)}</button></div>
       <div class="bind-row"><span>Attack / break key <small>(as well as left click)</small></span><button class="btn-key" data-bind="attackKey">${keyName(s.attackKey)}</button></div>
@@ -203,6 +205,7 @@ export class Menu {
       check('bob', 'bobbing');
       check('assist', 'bridgeAssist');
       check('raw', 'rawInput');
+      check('clicks', 'clickMonitor');
       check('togglemove', 'toggleMove');
 
       // Click a key button, then press the key you want (Esc cancels,
@@ -315,8 +318,8 @@ export class Menu {
       { title: 'Protect your bed', icons: ['block:24', 'block:32', 'block:9'], text: `Every team has a bed on its island. While your bed stands, you respawn when you die. <b>Break the other beds</b> and knock those players out for good. The <b>last team standing wins</b>.` },
       { title: 'Collect money', icons: ['silver', 'coin', 'gold', 'diamond'], text: `<b>Silver</b> and <b>Coins</b> drop at your base generator: stand on it to collect. <b>Gold</b> is on the small islands between bases, and <b>Diamonds</b> are on the big middle island.` },
       { title: 'Go shopping', icons: ['stone_sword', 'iron_chestplate', 'golden_apple'], text: `Walk up to the <b>goblin</b> and press <b>E</b> for the Item Shop (Silver, Gold, Diamonds). The <b>tinker</b> sells <b>Team Upgrades</b> and traps for Coins. Buy blocks first!` },
-      { title: 'Bridge across', icons: ['block:24', 'bridge_egg', 'popup_tower'], text: `Hold <b>Shift</b> at the edge (you won’t fall), look down at the side of the block and <b>right-click</b>${this.settings.placeKey ? ` (or press <b>${keyName(this.settings.placeKey)}</b>)` : ''} to place. The white outline shows where it goes. <b>Instant Bridge</b> and <b>Pop-up Tower</b> build themselves where you aim.` },
-      { title: 'Fight & break beds', icons: ['iron_sword', 'bow', 'fireball', 'block:54'], text: `<b>Left-click</b> to hit (jump while hitting for crits) and hold it to break blocks. Cover your bed with blocks, and use pickaxes, fireballs and TNT to get through other teams’ defences.` },
+      { title: 'Bridge across', icons: ['block:24', 'bridge_egg', 'popup_tower'], text: `Hold <b>Shift</b> at the edge (you won’t fall), look down at the side of the block and <b>right- or left-click</b> to place. The white outline shows where it goes. <b>Instant Bridge</b> and <b>Pop-up Tower</b> build themselves where you aim.` },
+      { title: 'Fight & break beds', icons: ['iron_sword', 'bow', 'fireball', 'block:54'], text: `<b>Left-click</b> to hit (jump while hitting for crits). Hold either mouse button to break blocks. Cover your bed with blocks, and use pickaxes, fireballs and TNT to get through other teams’ defences.` },
       { title: 'Play together', icons: ['ender_pearl', 'magic_milk'], text: `<b>PLAY</b> finds a public game. A <b>Private Room</b> gives you a code to share with friends. In the lobby press <b>E</b> to pick a team and <b>T</b> to chat. Online games ask if you want <b>voice chat</b> (join or leave any time from the Esc menu). Hold <b>Tab</b> to see everyone. Want to warm up? Try <b>Practice vs Bots</b>.` },
     ];
     let i = 0;
@@ -350,8 +353,8 @@ export class Menu {
     const rows = [
       ['W A S D', 'Move'], ['Space', 'Jump · double-tap to fly in the lobby'], ['Shift', 'Sneak (won’t fall off edges)'],
       ['Ctrl / double-tap W', 'Sprint'],
-      [`Left click${this.settings.attackKey ? ` / ${keyName(this.settings.attackKey)}` : ''}`, 'Attack / break (hold)'],
-      [`Right click${this.settings.placeKey ? ` / ${keyName(this.settings.placeKey)}` : ''}`, 'Place / use / eat (hold)'],
+      [`Left click${this.settings.attackKey ? ` / ${keyName(this.settings.attackKey)}` : ''}`, 'Hit · place (click) · break (hold)'],
+      [`Right click${this.settings.placeKey ? ` / ${keyName(this.settings.placeKey)}` : ''}`, 'Place (click) · break (hold) · use / eat'],
       ['E', 'Talk to a shopkeeper · pick team in lobby · otherwise inventory'], ['Q', 'Drop item (Ctrl+Q: whole stack)'], ['T', 'Chat'],
       ['1–9 / scroll', 'Pick hotbar slot'], ['F5', 'Change camera'], ['F1', 'Hide HUD'], ['F3', 'Debug info'], ['Esc', 'Pause'],
     ];

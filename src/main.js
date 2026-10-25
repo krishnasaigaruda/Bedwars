@@ -21,7 +21,7 @@ import {
 import { ProjectileRenderer } from './render/projectiles.js';
 import { RemotePlayers } from './render/remote.js';
 import { Renderer } from './render/renderer.js';
-import { HUD, MIC_ICON, MUTED_ICON } from './ui/hud.js';
+import { HUD, MIC_ICON, MUTED_ICON, iconURL } from './ui/hud.js';
 import { InventoryUI } from './ui/inventoryui.js';
 import { LobbyUI } from './ui/lobbyui.js';
 import { Menu, loadSettings, saveSettings } from './ui/menus.js';
@@ -79,6 +79,8 @@ const local = {
   hurtTime: 0,
   exh: 0, fall: 0, tpSeq: 0,
   sq: 0, exhOut: 0, bodyN: 0,      // position update number; hunger not yet sent to the host
+  rightPending: false, rightDownAt: 0, mining: false,   // right click: a tap places, a hold breaks
+  leftPending: false, leftDownAt: 0,                    // left click with blocks in hand: the same
   model: null,
   target: null, ghost: null, npc: null, aimPlayer: null,
   predicted: new Set(),
@@ -223,6 +225,9 @@ function resetToLobby() {
   local.body.flying = false;
   local.cam = 0;
   if (isHost()) state.session.setWorld(state.world);
+  // Every game starts with a reminder of how building works.
+  hud.showTip(`<img src="${iconURL('block:24')}"><span><b>LEFT CLICK</b> places blocks (a quick click) · <b>hold</b> the click to break · right click works too</span>`, 12);
+  hud.chat('<span class="system">Placing blocks: <b>left click</b> (a quick click). Hold the click to break blocks.</span>');
 }
 
 let roundTimer = null;
@@ -243,6 +248,37 @@ function enterGame(session) {
   if (IS_WINDOWS && !touchOk() && !settings.toggleMove) checkTouchpad(() => startPlaying(session));
   else startPlaying(session);
   if (isHost() && kind !== 'offline') stopBackground = startBackgroundTicks();
+}
+
+// ------------------------------------------------------------- click monitor
+
+// Settings → "Show my clicks": every click the game receives, which keys were
+// down, how long after the last key press, and what the click did. A tap that
+// never shows up here was dropped before it reached the browser.
+const clickLog = [];
+let lastKeyPress = -1e9;
+window.addEventListener('keydown', (e) => { if (!e.repeat) lastKeyPress = performance.now(); }, true);
+const ok = (text) => ({ ok: true, text });
+const no = (text) => ({ ok: false, text });
+const shortKey = (c) => c.replace(/^Key|^Digit/, '').replace(/(Left|Right)$/, '');
+
+function logClick(button, result) {
+  if (!settings.clickMonitor) return;
+  const keys = [...input.keys].map(shortKey).join('+') || 'none';
+  const since = Math.round(performance.now() - lastKeyPress);
+  logNote(result, `${button} click · keys held: ${keys} · ${since < 5000 ? `${since} ms after a key press` : 'no key pressed lately'}`);
+}
+
+function logNote(result, text = '') {
+  if (!settings.clickMonitor) return;
+  clickLog.push({ t: performance.now(), text, result });
+  if (clickLog.length > 8) clickLog.shift();
+}
+
+function clickMonitor() {
+  const now = performance.now();
+  const rows = clickLog.map((c) => `${((now - c.t) / 1000).toFixed(1)}s ago  ${esc(c.text)}${c.text ? ' → ' : ''}<span class="${c.result.ok ? 'ok' : 'no'}">${esc(c.result.text)}</span>`);
+  return `<b>CLICKS THE GAME RECEIVED</b>  (keys held now: ${[...input.keys].map(shortKey).join(' + ') || 'none'})\n${rows.join('\n') || 'None yet. Tap or click while playing.'}`;
 }
 
 // Toggle movement (Settings): W A S D, Shift and Ctrl switch on and off
@@ -272,6 +308,30 @@ function toggleKey(code) {
   if (toggles.sneak) now.push('Sneaking');
   hud.showAction(now.length ? `${now.join(' · ')} (tap again to stop)` : 'Stopped', 1.5);
   return true;
+}
+
+// Right click: a click shorter than this places or uses; holding longer breaks.
+const TAP_MS = 180;
+
+function rightTap() { useTap('Right'); }
+
+// Left click places too (handy on a touchpad, where a right click is a
+// two-finger tap that Windows drops while you move). It never opens chests.
+function leftTap() {
+  if (!local.ghost || chestAt(local.target)) {
+    swing();
+    logClick('Left', no('no spot to place: aim at the side or top of a block'));
+    return;
+  }
+  useTap('Left');
+}
+
+function useTap(button) {
+  if (local.placeDelay > 0) { logClick(button, no('too soon after the last block')); return; }
+  const held = getItem(currentInv().heldId());
+  const res = useItem(true);
+  local.placeDelay = 1;
+  logClick(button, res === true ? ok('placed a block') : res === false ? no('no spot to place: aim at the side or top of a block') : ok(held ? `used ${held.name}` : 'nothing in your hand'));
 }
 
 function startPlaying(session) {
@@ -567,6 +627,7 @@ function onNet(m) {
       handleEvent(m.e);
       break;
     case 'blk':
+      if (m.id === B.AIR) logNote(no('the host took back a block you placed'));
       if (state.world.get(m.x, m.y, m.z) !== m.id) state.world.set(m.x, m.y, m.z, m.id, m.placed);
       break;
     case 'chat': {
@@ -911,7 +972,7 @@ function useItem(first) {
     if (local.bow < 0) local.bow = 0;
     return;
   }
-  if (item.kind === 'block') { tryPlace(); return; }
+  if (item.kind === 'block') return tryPlace();
   if (item.kind === 'deploy') {
     if (!first || state.phase !== 'playing') return;
     const g = local.ghost;
@@ -1083,8 +1144,11 @@ function tick() {
     if (local.swingInt >= SWING_TICKS) { local.swingInt = 0; local.swinging = false; }
   }
 
-  // Breaking (PlayerControllerMP.onPlayerDamageBlock).
-  if (controls && playing && alive && input.mouse.left && !local.npc && !local.aimPlayer) {
+  // Breaking (PlayerControllerMP.onPlayerDamageBlock): hold left click, or
+  // hold right click (a quick right click places instead).
+  const holding = (pending, at, down) => down && (!pending || performance.now() - at >= TAP_MS);
+  local.mining = holding(local.leftPending, local.leftDownAt, input.mouse.left) || (local.rightPending && holding(true, local.rightDownAt, input.mouse.right));
+  if (controls && playing && alive && local.mining && !local.npc && !local.aimPlayer) {
     const t = local.target;
     if (local.breakDelay > 0) local.breakDelay--;
     else if (t) {
@@ -1375,12 +1439,34 @@ function updateGame(dt) {
     if (input.doubleTapped('Space') && b.canFly) { b.flying = !b.flying; b.vel.y = 0; play('whoosh'); }
     if (input.doubleTapped('KeyW')) local.sprintTap = true;
     if (input.mouse.leftPressed && alive) {
-      if (local.npc) openNpc(local.npc);
-      else attack();
+      const kind = getItem(currentInv().heldId())?.kind;
+      if (local.npc) { openNpc(local.npc); logClick('Left', ok('opened the shop')); }
+      else if (!local.aimPlayer && (kind === 'block' || kind === 'deploy')) {
+        // Holding something placeable: wait to see if it's a click (place) or a hold (break).
+        if (input.mouse.left) { local.leftPending = true; local.leftDownAt = performance.now(); }
+        else leftTap();   // pressed and let go within this frame
+      } else {
+        attack();
+        logClick('Left', ok(local.aimPlayer ? 'hit a player' : local.target ? 'started breaking' : 'swing'));
+      }
     }
-    if (input.mouse.rightPressed && alive && local.placeDelay === 0) {
-      useItem(true);
-      local.placeDelay = 1;
+    if (local.leftPending && !input.mouse.left) {
+      local.leftPending = false;
+      if (performance.now() - local.leftDownAt < TAP_MS) leftTap();
+    }
+    if (input.mouse.rightPressed && alive) {
+      // Things with their own right-click use (food, bows, throwables, potions,
+      // armor), shops and chests act right away. Otherwise wait: a quick
+      // click places, holding it breaks.
+      const kind = getItem(currentInv().heldId())?.kind;
+      const opens = local.npc || (chestAt(local.target) && !input.keys.has('ShiftLeft'));
+      if (opens || ['food', 'bow', 'throw', 'potion', 'armor', 'tower'].includes(kind)) rightTap();
+      else if (input.mouse.right) { local.rightPending = true; local.rightDownAt = performance.now(); }
+      else rightTap();   // pressed and let go within this frame
+    }
+    if (local.rightPending && !input.mouse.right) {
+      local.rightPending = false;
+      if (performance.now() - local.rightDownAt < TAP_MS) rightTap();
     }
   }
 
@@ -1467,7 +1553,7 @@ function updateGame(dt) {
   const br = local.breaking;
   // Advance smoothly between ticks too, and reach the last stage just before it breaks.
   const crack = br && !br.blocked && br.ticks > 1
-    ? Math.min(0.999, (br.progress + (input.mouse.left ? alpha / br.ticks : 0)) * br.ticks / (br.ticks - 1)) : 0;
+    ? Math.min(0.999, (br.progress + (local.mining ? alpha / br.ticks : 0)) * br.ticks / (br.ticks - 1)) : 0;
   cursor.setProgress(local.target, crack);
   hud.setPrompt(local.npc ? (local.npc.kind === 'shop' ? 'Item Shop' : 'Team Upgrades')
     : chestAt(local.target) ? chestAt(local.target).title
@@ -1518,6 +1604,7 @@ function updateGame(dt) {
   }
   hud.setTab(input.keys.has('Tab') && !state.ui ? tabList() : null);
   hud.setVoice(state.session?.voice?.joined ? voicePanel() : null);
+  hud.setClicks(settings.clickMonitor ? clickMonitor() : null);
   hud.setTopbar(state.game ? topbar() : null);
   invUI.update();
   shopUI.update();
