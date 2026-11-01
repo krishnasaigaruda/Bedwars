@@ -231,8 +231,15 @@ function resetToLobby() {
 }
 
 let roundTimer = null;
+const HOST_SILENCE_MS = 15000;
 
 function enterGame(session) {
+  // Never two sessions at once: an old one left running would go unticked.
+  if (state.session && state.session !== session) {
+    state.session.leave();
+    stopBackground?.();
+    stopBackground = null;
+  }
   state.session = session;
   session.onMessage = onNet;
   state.lobby = session.lobby;
@@ -1435,6 +1442,13 @@ function lobbyRow(r) {
 }
 
 function updateGame(dt) {
+  // The host sends positions many times a second; a long silence means it's
+  // gone or frozen, even if the connection hasn't noticed yet.
+  const heard = state.session?.heard;
+  if (heard && performance.now() - heard > HOST_SILENCE_MS) {
+    leaveToMenu('The host stopped responding. Press PLAY to find another game.');
+    return;
+  }
   const b = local.body;
   const me = state.me;
   const controls = input.locked && !state.ui;
@@ -1817,18 +1831,27 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'Enter' && state.phase === 'lobby' && canStart()) state.session.requestStart();
 });
 
+// One connection attempt at a time. Pressing PLAY again while the first press
+// was still looking used to make you host a room and then join it yourself:
+// the hidden host stopped ticking, so its lobby sat at "STARTS IN 0s" forever.
+let connecting = false;
 async function withNet(fn) {
+  if (connecting) return;
+  connecting = true;
   menu.note('Connecting…');
   try {
     await fn();
   } catch (err) {
     console.error(err);
     menu.note(err?.message ? `${err.message}` : 'Could not connect. Check your internet and try again.');
+  } finally {
+    connecting = false;
   }
 }
 
 const menu = new Menu(document.getElementById('menu'), settings, {
   onPractice: (bots) => {
+    if (connecting) return;
     const session = new HostSession({ kind: 'offline', mode: settings.mode, mapId: pickMap(), name: settings.name, bots, look: settings.look });
     enterGame(session);
   },

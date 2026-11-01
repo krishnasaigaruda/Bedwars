@@ -489,7 +489,9 @@ export class ClientSession {
     this.onMessage = () => {};
     this.queue = [];
     this.voice = new VoiceCall(this);
+    this.heard = performance.now();   // last message from the host (main watches for silence)
     link.onData((m) => {
+      this.heard = performance.now();
       if (m.t === 'lobby' || m.t === 'welcome') this.lobby = m.lobby;
       if (m.t === 'start' || m.t === 'round') this.lobby = m.lobby;
       this.onMessage(m);
