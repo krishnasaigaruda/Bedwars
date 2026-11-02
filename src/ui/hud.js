@@ -25,6 +25,88 @@ export function iconURL(id, tint) {
 export const MIC_ICON = '<svg class="mic" viewBox="0 0 12 16"><rect x="3.5" y="1" width="5" height="9" rx="2.5"/><path d="M1.5 7.5a4.5 4.5 0 0 0 9 0M6 12v3M3.5 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 export const MUTED_ICON = '<svg class="mic muted" viewBox="0 0 12 16"><rect x="3.5" y="1" width="5" height="9" rx="2.5"/><path d="M1.5 7.5a4.5 4.5 0 0 0 9 0M6 12v3M3.5 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M1 1l10 14" stroke="#ff4d4d" stroke-width="2" stroke-linecap="round"/></svg>';
 
+// Little pixel-art pictures (instead of emoji, which look different on every
+// computer). Each row is a string; each letter is a colour, '.' is empty.
+function pixelArt(rows, colors, cls = '') {
+  let rects = '';
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const c = colors[row[x]];
+      if (c) rects += `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${c}"/>`;
+    }
+  });
+  return `<svg class="px ${cls}" viewBox="0 0 ${rows[0].length} ${rows.length}" shape-rendering="crispEdges">${rects}</svg>`;
+}
+const OUTLINE = '#2a1a08';
+const shade = (hex, k) => '#' + [1, 3, 5].map((i) => Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k))).toString(16).padStart(2, '0')).join('');
+
+export const TROPHY_ICON = pixelArt([
+  '..KKKKKKKK..',
+  'KKKWYYYYDKKK',
+  'KYKWYYYYDKYK',
+  'KYKYYYYYDKYK',
+  '.KKYYYYYDKK.',
+  '..KYYYYYDK..',
+  '...KYYYDK...',
+  '....KYDK....',
+  '....KYDK....',
+  '...KYYYDK...',
+  '..KDDDDDDK..',
+  '..KKKKKKKK..',
+], { K: OUTLINE, Y: '#ffd23f', W: '#fff4b8', D: '#d39a16' }, 'trophy');
+
+// A bed from the side in a team's colour; broken = grey and snapped in two.
+const BED_ROWS = [
+  'KKK.........',
+  'KWWKKKKKKKKK',
+  'KWWLLLLLLLLK',
+  'KWWTTTTTTTTK',
+  'KBBBBBBBBBBK',
+  'KBKKKKKKKKBK',
+  'KK........KK',
+];
+export function bedIcon(hex, broken = false) {
+  if (broken) {
+    const rows = BED_ROWS.map((r) => `${r.slice(0, 6)}.${r.slice(6)}`);
+    return pixelArt(rows, { K: '#1e1e1e', W: '#9a9a9a', L: '#7a7a7a', T: '#5e5e5e', B: '#4a4a4a' }, 'bed broken');
+  }
+  return pixelArt(BED_ROWS, { K: OUTLINE, W: '#f4f4f4', L: shade(hex, 1.25), T: hex, B: '#9c6b3c' }, 'bed');
+}
+
+export const CHECK_ICON = pixelArt([
+  '.......KK',
+  '......KGK',
+  'KK...KGK.',
+  'KGK.KGK..',
+  '.KGKGK...',
+  '..KGK....',
+  '...K.....',
+], { K: '#123a0c', G: '#5bd23c' }, 'check');
+
+export const CROSS_ICON = pixelArt([
+  'KK...KK',
+  'KRK.KRK',
+  '.KRKRK.',
+  '..KRK..',
+  '.KRKRK.',
+  'KRK.KRK',
+  'KK...KK',
+], { K: '#3a0c0c', R: '#ff4f45' }, 'cross');
+
+// The close button's X: plain white, takes the button's colour.
+export const CLOSE_ICON = pixelArt([
+  'WW...WW',
+  'WWW.WWW',
+  '.WWWWW.',
+  '..WWW..',
+  '.WWWWW.',
+  'WWW.WWW',
+  'WW...WW',
+], { W: 'currentColor' }, 'close');
+
+// An item's own picture, for messages ("killed by" sword, bow...).
+export const itemImg = (id, tint) => `<img class="msg-icon" src="${iconURL(id, tint)}" alt="">`;
+
 const HEART = (cls) => `<svg class="heart ${cls}" viewBox="0 0 9 9"><path d="M1 0h2v1h1v1h1V1h1V0h2v1h1v3H8v1H7v1H6v1H5v1H4V7H3V6H2V5H1V4H0V1h1z"/></svg>`;
 
 export class HUD {

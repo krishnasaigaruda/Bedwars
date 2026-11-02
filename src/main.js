@@ -21,7 +21,7 @@ import {
 import { ProjectileRenderer } from './render/projectiles.js';
 import { RemotePlayers } from './render/remote.js';
 import { Renderer } from './render/renderer.js';
-import { HUD, MIC_ICON, MUTED_ICON, iconURL } from './ui/hud.js';
+import { HUD, MIC_ICON, MUTED_ICON, iconURL, TROPHY_ICON, CHECK_ICON, CROSS_ICON, bedIcon, itemImg } from './ui/hud.js';
 import { InventoryUI } from './ui/inventoryui.js';
 import { LobbyUI } from './ui/lobbyui.js';
 import { Menu, loadSettings, saveSettings } from './ui/menus.js';
@@ -406,7 +406,7 @@ function checkTouchpad(done) {
     passed = true;
     setTouchOk(true);
     pad.className = 'touch-pad ok';
-    pad.innerHTML = '✔ It works!';
+    pad.innerHTML = `${CHECK_ICON} It works!`;
     say('Taps get through while you move. Have fun!', 'good');
     play('ding');
     setTimeout(() => { stop(); done(); }, 900);
@@ -1259,7 +1259,7 @@ function handleEvent(e) {
       if (!e.byName) break;
       const t = TEAMS[e.team];
       const by = ` by <span style="color:${TEAMS[e.byTeam].css}">${esc(e.byName)}</span>`;
-      const bedLine = `<b style="color:#fff">BED DESTRUCTION &gt;</b> <span style="color:${t.css}">${t.name} Bed</span> was destroyed${by}!`;
+      const bedLine = `${bedIcon(t.css, true)} <b style="color:#fff">BED DESTRUCTION &gt;</b> <span style="color:${t.css}">${t.name} Bed</span> was destroyed${by}!`;
       hud.message(bedLine, 8);
       hud.chat(bedLine);
       if (me && e.team === me.team) hud.showTitle('BED DESTROYED!', 'You will no longer respawn!', 3.5, '#ff4f45');
@@ -1367,7 +1367,17 @@ function deathMessage(e) {
   const how = killer
     ? { void: `was knocked into the void by ${killer}`, fall: `was knocked off a cliff by ${killer}`, arrow: `was shot by ${killer}`, fireball: `was blown up by ${killer}`, tnt: `was blown up by ${killer}` }[e.cause] ?? `was killed by ${killer}`
     : { void: 'fell into the void', fall: 'hit the ground too hard', starve: 'starved to death', pearl: 'landed too hard', tnt: 'blew up', fireball: 'blew up' }[e.cause] ?? 'died';
-  return `${name} ${how}.${e.final ? ' <span style="color:#5ff0ff">FINAL KILL!</span>' : ''}`;
+  return `${deathPicture(e)} ${name} ${how}.${e.final ? ' <span style="color:#5ff0ff">FINAL KILL!</span>' : ''}`;
+}
+
+// A small picture of what did it, in front of a death message.
+function deathPicture(e) {
+  if (e.cause === 'arrow') return itemImg('bow');
+  if (e.cause === 'fireball' || e.cause === 'tnt') return itemImg('fireball');
+  if (e.cause === 'pearl') return itemImg('ender_pearl');
+  if (e.cause === 'starve') return itemImg('steak');
+  if (e.cause === 'void' || e.cause === 'fall') return e.killerName ? itemImg('kb_stick') : CROSS_ICON;
+  return itemImg('iron_sword');
 }
 
 function showEnd(e) {
@@ -1658,12 +1668,12 @@ function topbar() {
     const t = TEAMS[base.team];
     const faces = team.map((p) => {
       const cls = !p.connected || p.eliminated ? 'out' : !p.alive ? 'dead' : '';
-      return `<span class="face ${cls}" title="${esc(p.name)}"><img src="${faceIcon(p.name, p.look)}"></span>`;
+      return `<span class="face ${cls}" title="${esc(p.name)}"><img src="${faceIcon(p.name, p.look)}">${cls === 'out' ? CROSS_ICON : ''}</span>`;
     }).join('');
     groups.push(`<span class="tb-team ${g.beds.get(base.team) ? '' : 'nobed'}" style="--tc:${t.css}">${faces}</span>`);
   }
   const alive = g.teamsAlive().size;
-  return `<span class="tb-rank">#${alive}<i>🏆</i></span>${groups.join('')}`;
+  return `<span class="tb-rank">#${alive}${TROPHY_ICON}</span>${groups.join('')}`;
 }
 
 // Hold Tab: everyone in the game, grouped by team.
@@ -1675,7 +1685,7 @@ function tabList() {
       const team = [...state.game.players.values()].filter((p) => p.team === base.team);
       if (!team.length) continue;
       const t = TEAMS[base.team];
-      const bed = state.game.beds.get(base.team) ? '✔' : '✘';
+      const bed = bedIcon(t.css, !state.game.beds.get(base.team));
       rows += `<div class="tab-team" style="color:${t.css}">${t.name} <span>${bed}</span></div>`;
       for (const p of team) {
         const status = !p.connected ? 'left' : p.eliminated ? 'out' : !p.alive ? 'dead' : '';
@@ -1753,7 +1763,7 @@ function scoreboard() {
   const rows = state.map.bases.map((base) => {
     const t = TEAMS[base.team];
     const alive = [...g.players.values()].filter((p) => p.team === base.team && !p.eliminated && p.connected).length;
-    const status = g.beds.get(base.team) ? '<b style="color:#5bd23c">✔</b>' : alive ? `<b style="color:#ffd23f">${alive}</b>` : '<b style="color:#ff4f45">✘</b>';
+    const status = g.beds.get(base.team) ? bedIcon(t.css) : alive ? `<b style="color:#ffd23f">${alive}</b>` : CROSS_ICON;
     const you = state.me?.team === base.team ? ' class="you"' : '';
     return `<div class="board-row"><span${you}><b style="color:${t.css}">${t.letter}</b> ${t.name}</span>${status}</div>`;
   }).join('');
@@ -1831,6 +1841,39 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'Enter' && state.phase === 'lobby' && canStart()) state.session.requestStart();
 });
 
+// Two players who press PLAY at the same moment each start a room. While
+// you're alone in yours, every few seconds look for an open room in a lower
+// slot and move into it, so you end up together.
+function watchForRoomBelow(session, slot) {
+  const mode = session.mode.id;
+  const alone = () => state.session === session && state.phase === 'lobby' && session.lobby.state === 'waiting' && session.lobby.players.length === 1;
+  let busy = false;
+  const timer = setInterval(async () => {
+    if (state.session !== session || state.phase !== 'lobby') { clearInterval(timer); return; }
+    if (busy || !alone()) return;
+    busy = true;
+    let client = null;
+    try {
+      const mm = await import('./net/matchmaking.js');
+      const target = await mm.findRoomBelow(session.peer, mode, slot);
+      if (target < 0 || !alone()) return;
+      const { peer, link } = await mm.joinSlot(mode, target);
+      client = new ClientSession({ peer, link, name: settings.name, look: settings.look });
+      await client.hello();
+      // Someone joined us meanwhile: stay, they came for this room.
+      if (!alone()) { client.leave(); return; }
+      clearInterval(timer);
+      enterGame(client);   // closes the old room
+      hud.chat('<span class="system">Found another game with players waiting, so you moved into it.</span>');
+    } catch (err) {
+      console.warn('room merge failed', err);
+      client?.leave();
+    } finally {
+      busy = false;
+    }
+  }, 4000);
+}
+
 // One connection attempt at a time. Pressing PLAY again while the first press
 // was still looking used to make you host a room and then join it yourself:
 // the hidden host stopped ticking, so its lobby sat at "STARTS IN 0s" forever.
@@ -1859,7 +1902,18 @@ const menu = new Menu(document.getElementById('menu'), settings, {
     const mm = await import('./net/matchmaking.js');
     const r = await mm.quickPlay(settings.mode, (t) => menu.note(t));
     if (r.role === 'host') {
-      enterGame(new HostSession({ peer: r.peer, kind: 'public', mode: settings.mode, mapId: pickMap(), name: settings.name, look: settings.look }));
+      const session = new HostSession({ peer: r.peer, kind: 'public', mode: settings.mode, mapId: pickMap(), name: settings.name, look: settings.look });
+      enterGame(session);
+      // A room that was only just being made can also fail to answer, so only
+      // warn if we're still alone a while later.
+      if (r.unreachable) {
+        setTimeout(() => {
+          if (state.session === session && state.phase === 'lobby' && session.lobby.players.length === 1) {
+            hud.chat(`<span class="system">Found ${r.unreachable === 1 ? 'a game' : `${r.unreachable} games`} but couldn’t connect: a network or firewall is blocking the connection between you and that host, so you got a new room instead.</span>`);
+          }
+        }, 12000);
+      }
+      if (r.slot > 0) watchForRoomBelow(session, r.slot);
     } else {
       const session = new ClientSession({ peer: r.peer, link: r.link, name: settings.name, look: settings.look });
       await session.hello();

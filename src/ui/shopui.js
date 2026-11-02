@@ -3,7 +3,7 @@
 // listed along the bottom; click a card to buy.
 import { getItem } from '../game/items.js';
 import { CATEGORIES, CURRENCIES, MAX_TRAPS, TRAPS, TRAP_COSTS, UPGRADES, resolveOffer, resolveUpgrade } from '../game/shop.js';
-import { iconURL } from './hud.js';
+import { CLOSE_ICON, iconURL } from './hud.js';
 
 export class ShopUI {
   constructor(root, { onBuy, onUpgrade, onTrap, onClose }) {
@@ -100,7 +100,7 @@ export class ShopUI {
     const note = this.noteText ? `<div class="shop-note ${this.noteText.ok ? 'ok' : 'no'}">${this.noteText.text}</div>` : '<div class="shop-note"></div>';
     this.root.innerHTML = `
       <div class="panel shop-panel ${this.kind}">
-        <button class="close-x" data-close>✕</button>
+        <button class="close-x" data-close>${CLOSE_ICON}</button>
         <div class="panel-title">${title}</div>
         <div class="shop-body">${body}</div>
         <div class="shop-foot"><div class="wallet">${money}</div>${note}</div>

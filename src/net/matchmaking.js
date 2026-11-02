@@ -44,37 +44,69 @@ export async function joinPrivate(code) {
   }
 }
 
-// Ask a host for its state: resolves { link, info } or null.
+// Ask a host for its state: resolves { link, info }, { failed: true } when a
+// room is there but we couldn't connect to it, or null when there's no room.
 function probe(peer, id) {
   return connect(peer, id, 8000).then((link) => new Promise((resolve) => {
-    const t = setTimeout(() => { link.close(); resolve(null); }, 3000);
+    const t = setTimeout(() => { link.close(); resolve({ failed: true }); }, 3000);
     link.onData((m) => {
       if (m.t !== 'info') return;
       clearTimeout(t);
       resolve({ link, info: m });
     });
     link.send({ t: 'probe' });
-  })).catch(() => null);
+  })).catch((e) => (e.message === 'unavailable' ? null : { failed: true }));
 }
 
-// Returns { role: 'client', peer, link } or { role: 'host', peer, slot }.
+const isOpen = (f) => f?.info && (f.info.state === 'waiting' || f.info.state === 'countdown') && f.info.players < f.info.max;
+
+// Returns { role: 'client', peer, link } or { role: 'host', peer, slot, unreachable }
+// (unreachable: rooms that exist but we couldn't connect to).
 export async function quickPlay(mode, onStatus) {
   onStatus?.('Looking for a game…');
   const peer = await openPeer();
-  const found = (await Promise.all(Array.from({ length: SLOTS }, (_, i) => probe(peer, slotId(mode, i))))).filter(Boolean);
-  const open = found.filter((f) => (f.info.state === 'waiting' || f.info.state === 'countdown') && f.info.players < f.info.max);
+  const all = await Promise.all(Array.from({ length: SLOTS }, (_, i) => probe(peer, slotId(mode, i))));
+  const found = all.filter((f) => f?.link);
+  const unreachable = all.filter((f) => f?.failed).length;
+  const open = found.filter(isOpen);
   open.sort((a, b) => b.info.players - a.info.players);
   for (const f of found) if (f !== open[0]) f.link.close();
   if (open[0]) return { role: 'client', peer, link: open[0].link };
 
   peer.destroy();
-  onStatus?.('No open games. Starting a new one…');
+  onStatus?.(unreachable ? 'Found a game but couldn’t connect to it. Starting a new one…' : 'No open games. Starting a new one…');
   for (let i = 0; i < SLOTS; i++) {
     try {
-      return { role: 'host', peer: await openPeer(slotId(mode, i)), slot: i };
+      return { role: 'host', peer: await openPeer(slotId(mode, i)), slot: i, unreachable };
     } catch (e) {
       if (e.type !== 'unavailable-id') throw e;
     }
   }
   throw new Error('All public rooms are busy. Try a private room!');
+}
+
+// Two players pressing PLAY at the same moment both find nothing and both
+// start a room. A host still alone in its room asks the rooms in lower slots
+// (using its own peer) whether one is open; returns that slot or -1. Rooms
+// only ever move down, and slot 0 never moves, so two rooms can't swap.
+export async function findRoomBelow(peer, mode, below) {
+  const all = await Promise.all(Array.from({ length: below }, (_, i) => probe(peer, slotId(mode, i))));
+  let best = -1;
+  all.forEach((f, i) => {
+    if (!isOpen(f)) return;
+    if (best < 0 || f.info.players > all[best].info.players) best = i;
+  });
+  for (const f of all) f?.link?.close();
+  return best;
+}
+
+// Join the room in a Quick Play slot with a fresh peer: { peer, link }.
+export async function joinSlot(mode, slot) {
+  const peer = await openPeer();
+  try {
+    return { peer, link: await connect(peer, slotId(mode, slot)) };
+  } catch (e) {
+    peer.destroy();
+    throw e;
+  }
 }

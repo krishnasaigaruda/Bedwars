@@ -1,6 +1,7 @@
 // Waiting-lobby team picker (E in the lobby). Shows the room code, who is on
 // which team, and a Start button for the host of a private room.
 import { MODES, TEAMS } from '../config.js';
+import { CLOSE_ICON } from './hud.js';
 
 export class LobbyUI {
   constructor(root, { onPick, onStart, onClose }) {
@@ -39,7 +40,7 @@ export class LobbyUI {
     const auto = lobby.players.filter((p) => p.team < 0).map((p) => p.name).join(', ');
     this.root.innerHTML = `
       <div class="panel teams-panel">
-        <button class="close-x" data-close>✕</button>
+        <button class="close-x" data-close>${CLOSE_ICON}</button>
         <div class="panel-title">Pick a Team</div>
         <div class="teams-grid">${cards}</div>
         <button class="btn btn-wood" data-team="-1">Random team${auto ? ` · ${auto}` : ''}</button>
